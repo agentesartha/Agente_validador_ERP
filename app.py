@@ -36,7 +36,22 @@ def exibir_relatorio_erros(erros):
         st.balloons() 
     else:
         st.error(f"❌ Foram encontrados {len(erros)} erros.")
+        
         df_erros = pd.DataFrame(erros)
+        
+        # 1. Converte o DataFrame de erros para CSV (usando ponto e vírgula e UTF-8 para compatibilidade)
+        csv_erros = df_erros.to_csv(index=False, sep=';', encoding='utf-8')
+        
+        # 2. EXIBE O BOTÃO DE DOWNLOAD (com type="primary" para destaque)
+        st.download_button(
+            label="⬇️ BAIXAR RELATÓRIO DE ERROS COMPLETO",
+            data=csv_erros,
+            file_name='relatorio_erros_validacao.csv',
+            mime='text/csv',
+            type="primary" # Torna o botão verde/azul neon, destacando-o
+        )
+
+        # 3. Exibe a tabela na interface (abaixo do botão)
         st.dataframe(
             df_erros, 
             use_container_width=True,

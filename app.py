@@ -54,16 +54,17 @@ col_logo, col_titulo = st.columns([1, 5])
 
 with col_logo:
     try:
-        # Logo aumentada
-        st.image("logo.png", width=250) 
+        st.image("logo.png", width=300)
     except:
         st.warning("Logo não encontrada")
 
 with col_titulo:
-    st.title("Agente Validador de ERP")
-    st.markdown("##### Selecione abaixo qual tipo de planilha você deseja validar") # Frase mantida
-
-st.divider() 
+    # 1. Título principal CENTRALIZADO (Usando H1 e CSS)
+    st.markdown("<h1 style='text-align: center; font-size: 32px;'>Agente Validador de ERP</h1>", unsafe_allow_html=True)
+    
+    # 2. Subtítulo CENTRALIZADO (Usando H5 e CSS)
+    # Adicionamos 'margin-top' para um pequeno espaçamento da linha de cima.
+    st.markdown("<h5 style='text-align: center; margin-top: 10px;'>Selecione abaixo qual tipo de planilha você deseja validar</h5>", unsafe_allow_html=True)
 
 # --- BOTÕES DE NAVEGAÇÃO ---
 col1, col2, col3 = st.columns(3)

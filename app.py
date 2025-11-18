@@ -50,22 +50,23 @@ def exibir_relatorio_erros(erros):
         )
 
 # --- CABEÇALHO E LOGO ---
-col_logo, col_titulo = st.columns([1, 5])
+# Usamos uma proporção de 1 (logo) : 4 (título centralizado) : 1 (espaço vazio)
+col_logo, col_center, col_right_spacer = st.columns([1, 4, 1])
 
 with col_logo:
     try:
-        st.image("logo.png", width=300)
+        st.image("logo.png", width=250)
     except:
         st.warning("Logo não encontrada")
 
-with col_titulo:
-    # 1. Título principal CENTRALIZADO (Usando H1 e CSS)
-    st.markdown("<h1 style='text-align: center; font-size: 32px;'>Agente Validador de ERP</h1>", unsafe_allow_html=True)
+with col_center:
+    # 1. Título principal CENTRALIZADO E BALANCEADO
+    # Adicionamos um pequeno padding superior (20px) para alinhar melhor verticalmente com a logo
+    st.markdown("<h1 style='text-align: center; font-size: 32px; padding-top: 20px;'>Agente Validador de ERP</h1>", unsafe_allow_html=True)
     
-    # 2. Subtítulo CENTRALIZADO (Usando H5 e CSS)
-    # Adicionamos 'margin-top' para um pequeno espaçamento da linha de cima.
+    # 2. Subtítulo CENTRALIZADO
     st.markdown("<h5 style='text-align: center; margin-top: 10px;'>Selecione abaixo qual tipo de planilha você deseja validar</h5>", unsafe_allow_html=True)
-
+    
 # --- BOTÕES DE NAVEGAÇÃO ---
 col1, col2, col3 = st.columns(3)
 

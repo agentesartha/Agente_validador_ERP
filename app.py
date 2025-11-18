@@ -9,8 +9,8 @@ from validador_de_estoque import validar_estoque
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(
-    page_title="Validador CSV",
-    page_icon="favicon.png", # Usa a logo na guia do navegador
+    page_title="Validador ERP",
+    page_icon="favicon.png", # Usa o arquivo favicon.png
     layout="wide"
 )
 
@@ -27,37 +27,41 @@ if 'pagina_atual' not in st.session_state:
 def set_pagina(nome_pagina):
     st.session_state['pagina_atual'] = nome_pagina
 
-# --- FUNÇÃO DE RELATÓRIO (COM BOTÃO ALINHADO À DIREITA) ---
+# --- FUNÇÃO DE RELATÓRIO ---
 def exibir_relatorio_erros(erros):
     if erros is None:
         st.error("❌ A validação falhou e não pôde ser concluída.")
     elif not erros:
-        st.success("✅ SUCESSO! Nenhum erro encontrado. Planilha pronta para importação.") 
+        st.success("✅ SUCESSO! Nenhum erro encontrado. Planilha pronta para importação.")
+        st.balloons() 
     else:
-        # 1. Linha de contagem de erros (Mantida para o aviso visual)
+        # Exibe o título do erro na primeira linha (Mantido st.error original)
         st.error(f"❌ Foram encontrados {len(erros)} erros.") 
         
-        # 2. Alinhamento: Usamos 3 colunas para empurrar o botão para a direita extrema (8:2)
-        col_spacer, col_download = st.columns([8, 2]) 
+        # 1. Alinhamento: Usamos 2 colunas para empurrar o botão para a direita (8:2)
+        col_space, col_download = st.columns([7, 3]) 
         
         with col_download:
-            # Adicionamos um pequeno padding superior para alinhar melhor verticalmente
-            st.markdown("<div style='padding-top: 10px;'>", unsafe_allow_html=True)
+            # Injetamos o container FLEXBOX para alinhar o botão à direita
+            st.markdown(
+                "<div style='display: flex; justify-content: flex-end; padding-top: 10px;'>", 
+                unsafe_allow_html=True
+            )
             
             df_erros = pd.DataFrame(erros)
             csv_erros = df_erros.to_csv(index=False, sep=';', encoding='utf-8')
             
-            # Botão agora é 'secondary' (cor neutra) e com label mais curto
+            # Botão com cor neutra (secondary) e alinhado à direita
             st.download_button(
-                label="⬇️ Baixar relatório",
+                label="⬇️ BAIXAR RELATÓRIO",
                 data=csv_erros,
                 file_name='relatorio_erros_validacao.csv',
                 mime='text/csv',
-                type="secondary" 
+                type="secondary"
             )
             st.markdown("</div>", unsafe_allow_html=True)
 
-        # 3. Exibe a tabela (agora ela alinha-se à esquerda do botão)
+        # 2. Exibe a tabela
         st.dataframe(
             df_erros, 
             use_container_width=True,
@@ -71,7 +75,7 @@ def exibir_relatorio_erros(erros):
         )
 
 # --- CABEÇALHO E LOGO ---
-# Usamos uma proporção de 1 (logo) : 4 (título centralizado) : 1 (espaço vazio)
+# Usamos [1, 4, 1] para balancear a logo e centralizar visualmente o texto
 col_logo, col_center, col_right_spacer = st.columns([1, 4, 1])
 
 with col_logo:
@@ -81,13 +85,14 @@ with col_logo:
         st.warning("Logo não encontrada")
 
 with col_center:
-    # 1. Título principal CENTRALIZADO E BALANCEADO
-    # Adicionamos um pequeno padding superior (20px) para alinhar melhor verticalmente com a logo
+    # 1. Título principal CENTRALIZADO
     st.markdown("<h1 style='text-align: center; font-size: 32px; padding-top: 20px;'>Agente Validador de ERP</h1>", unsafe_allow_html=True)
     
     # 2. Subtítulo CENTRALIZADO
     st.markdown("<h5 style='text-align: center; margin-top: 10px;'>Selecione abaixo qual tipo de planilha você deseja validar</h5>", unsafe_allow_html=True)
-    
+
+st.divider() 
+
 # --- BOTÕES DE NAVEGAÇÃO ---
 col1, col2, col3 = st.columns(3)
 
@@ -107,9 +112,8 @@ st.divider()
 
 # --- CONTEÚDO DINÂMICO ---
 
-# 1. Tela Inicial (IF)
+# 1. Tela Inicial (HOME)
 if st.session_state['pagina_atual'] == 'home':
-    # O comando 'pass' é obrigatório aqui para o Python aceitar o bloco vazio
     pass 
 
 # 2. Tela Parceiros (ELIF)
@@ -118,7 +122,8 @@ elif st.session_state['pagina_atual'] == 'parceiros':
     st.subheader("Faça o upload do arquivo `parceiros.csv` abaixo:")
     arquivo_upado = st.file_uploader(" ", type=["csv"], key="uploader_parceiros")
     
-    if arquivo_upado and st.button("Iniciar Validação", type="primary", key="btn_parceiros"):
+    # Botão Iniciar Validação com type="secondary" (cor neutra)
+    if arquivo_upado and st.button("Iniciar Validação", type="secondary", key="btn_parceiros"):
         with open(TEMP_PARCEIRO, "wb") as f:
             f.write(arquivo_upado.getbuffer())
         
@@ -134,7 +139,8 @@ elif st.session_state['pagina_atual'] == 'produtos':
     st.subheader("Faça o upload do arquivo `produtos.csv` abaixo:")
     arquivo_upado = st.file_uploader(" ", type=["csv"], key="uploader_produtos")
     
-    if arquivo_upado and st.button("Iniciar Validação", type="primary", key="btn_produtos"):
+    # Botão Iniciar Validação com type="secondary" (cor neutra)
+    if arquivo_upado and st.button("Iniciar Validação", type="secondary", key="btn_produtos"):
         with open(TEMP_PRODUTO, "wb") as f:
             f.write(arquivo_upado.getbuffer())
             
@@ -157,7 +163,8 @@ elif st.session_state['pagina_atual'] == 'estoque':
         st.subheader("2. Mestre de Produtos (`mestre_produtos.csv`)")
         arquivo_mestre = st.file_uploader(" ", type=["csv"], key="uploader_mestre_prod")
 
-    if arquivo_estoque and arquivo_mestre and st.button("Iniciar Validação Cruzada", type="primary", key="btn_estoque"):
+    # Botão Iniciar Validação com type="secondary" (cor neutra)
+    if arquivo_estoque and arquivo_mestre and st.button("Iniciar Validação Cruzada", type="secondary", key="btn_estoque"):
         with open(TEMP_ESTOQUE, "wb") as f: f.write(arquivo_estoque.getbuffer())
         with open(TEMP_MESTRE_PRODUTO, "wb") as f: f.write(arquivo_mestre.getbuffer())
         

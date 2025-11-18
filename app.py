@@ -14,6 +14,20 @@ st.set_page_config(
     layout="wide"
 )
 
+# --- INJEÇÃO CSS PARA BOTÕES (Roxo) ---
+st.markdown("""
+<style>
+    /* Munda a cor de todos os botões primários para Roxo */
+    div.stButton > button {
+        background-color: #8A2BE2 !important; 
+        color: white !important;
+        border-color: #8A2BE2 !important;
+        /* Garante que o texto dentro da coluna fique alinhado */
+        text-align: center; 
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # --- CONSTANTES ---
 TEMP_PARCEIRO = "temp_parceiros.csv"
 TEMP_PRODUTO = "temp_produtos.csv"
@@ -27,31 +41,40 @@ if 'pagina_atual' not in st.session_state:
 def set_pagina(nome_pagina):
     st.session_state['pagina_atual'] = nome_pagina
 
-# --- FUNÇÃO DE RELATÓRIO ---
+# --- FUNÇÃO DE RELATÓRIO (COM BOTÃO ALINHADO) ---
 def exibir_relatorio_erros(erros):
     if erros is None:
         st.error("❌ A validação falhou e não pôde ser concluída.")
     elif not erros:
         st.success("✅ SUCESSO! Nenhum erro encontrado. Planilha pronta para importação.")
-        st.balloons() 
     else:
-        st.error(f"❌ Foram encontrados {len(erros)} erros.")
+        # Cria 2 colunas para alinhar o texto e o botão
+        col_text, col_button = st.columns([6, 4]) 
         
-        df_erros = pd.DataFrame(erros)
-        
-        # 1. Converte o DataFrame de erros para CSV (usando ponto e vírgula e UTF-8 para compatibilidade)
-        csv_erros = df_erros.to_csv(index=False, sep=';', encoding='utf-8')
-        
-        # 2. EXIBE O BOTÃO DE DOWNLOAD (com type="primary" para destaque)
-        st.download_button(
-            label="⬇️ BAIXAR RELATÓRIO DE ERROS COMPLETO",
-            data=csv_erros,
-            file_name='relatorio_erros_validacao.csv',
-            mime='text/csv',
-            type="primary" # Torna o botão verde/azul neon, destacando-o
-        )
+        # 1. Título de Erro na primeira coluna
+        with col_text:
+            # Texto de erro (usamos markdown para manter o estilo e tamanho do texto)
+            st.markdown(f"<p style='color: #E35353; font-size: 20px; font-weight: bold;'>❌ Foram encontrados {len(erros)} erros.</p>", unsafe_allow_html=True)
+            
+        # 2. Botão de Download na segunda coluna
+        with col_button:
+            # Converte o DataFrame de erros para CSV
+            df_erros = pd.DataFrame(erros)
+            csv_erros = df_erros.to_csv(index=False, sep=';', encoding='utf-8')
+            
+            # Ajusta o alinhamento vertical do botão com o texto
+            st.markdown("<div style='padding-top: 5px;'>", unsafe_allow_html=True) 
 
-        # 3. Exibe a tabela na interface (abaixo do botão)
+            st.download_button(
+                label="⬇️ Baixar relatório de erros completo",
+                data=csv_erros,
+                file_name='relatorio_erros_validacao.csv',
+                mime='text/csv',
+                type="primary" # O botão primary agora é roxo (devido ao CSS injetado)
+            )
+            st.markdown("</div>", unsafe_allow_html=True)
+        
+        # O resto do layout de erro continua aqui (a tabela)
         st.dataframe(
             df_erros, 
             use_container_width=True,

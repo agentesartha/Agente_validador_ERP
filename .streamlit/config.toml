@@ -1,0 +1,148 @@
+import streamlit as st
+import pandas as pd
+import os
+
+# Importa as funções de validação
+from validador_de_parceiro import validar_parceiros
+from validador_de_produto import validar_produtos
+from validador_de_estoque import validar_estoque
+
+# --- CONFIGURAÇÃO DA PÁGINA ---
+st.set_page_config(
+    page_title="Validador ERP",
+    page_icon="🤖",
+    layout="wide"
+)
+
+# --- CONSTANTES ---
+TEMP_PARCEIRO = "temp_parceiros.csv"
+TEMP_PRODUTO = "temp_produtos.csv"
+TEMP_ESTOQUE = "temp_estoque.csv"
+TEMP_MESTRE_PRODUTO = "mestre_produtos.csv"
+
+# --- GERENCIAMENTO DE ESTADO (MEMÓRIA DO CLICK) ---
+# Isso serve para o Streamlit lembrar qual aba está aberta
+if 'pagina_atual' not in st.session_state:
+    st.session_state['pagina_atual'] = 'home'
+
+def set_pagina(nome_pagina):
+    st.session_state['pagina_atual'] = nome_pagina
+
+# --- FUNÇÃO DE RELATÓRIO ---
+def exibir_relatorio_erros(erros):
+    if erros is None:
+        st.error("❌ A validação falhou e não pôde ser concluída.")
+    elif not erros:
+        st.success("✅ SUCESSO! Nenhum erro encontrado. Planilha pronta para importação.")
+        st.balloons() # Efeito visual de sucesso
+    else:
+        st.error(f"❌ Foram encontrados {len(erros)} erros.")
+        df_erros = pd.DataFrame(erros)
+        # Exibe a tabela ocupando a largura total
+        st.dataframe(
+            df_erros, 
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "linha": st.column_config.NumberColumn("Linha", format="%d"),
+                "coluna": "Nome da Coluna",
+                "valor_encontrado": "Valor Inválido",
+                "erro": "Descrição do Erro"
+            }
+        )
+
+# --- CABEÇALHO E LOGO ---
+col_logo, col_titulo = st.columns([1, 5])
+
+with col_logo:
+    # Tenta carregar a logo se ela existir
+    try:
+        st.image("logo.png", width=150)
+    except:
+        st.warning("Logo não encontrada")
+
+with col_titulo:
+    st.title("Agente Validador de ERP")
+    st.markdown("##### Selecione abaixo qual tipo de planilha você deseja validar")
+
+st.divider() # Linha divisória visual
+
+# --- BOTÕES DE NAVEGAÇÃO (LAYOUT DE 3 COLUNAS) ---
+col1, col2, col3 = st.columns(3)
+
+# Botão 1: Parceiros
+with col1:
+    # Se a página atual for parceiros, destacamos o botão (opcional, visualmente o Streamlit padrão já ajuda)
+    if st.button("👥 Validar Parceiros", use_container_width=True):
+        set_pagina('parceiros')
+
+# Botão 2: Produtos
+with col2:
+    if st.button("📦 Validar Produtos", use_container_width=True):
+        set_pagina('produtos')
+
+# Botão 3: Estoque
+with col3:
+    if st.button("🏭 Validar Estoque", use_container_width=True):
+        set_pagina('estoque')
+
+st.divider()
+
+# --- CONTEÚDO DINÂMICO ---
+
+if st.session_state['pagina_atual'] == 'home':
+    st.info("👈 Clique em uma das opções acima para começar.")
+
+# === PÁGINA PARCEIROS ===
+elif st.session_state['pagina_atual'] == 'parceiros':
+    st.header("Validação de Parceiros")
+    arquivo_upado = st.file_uploader("Faça o upload do `parceiros.csv`", type=["csv"])
+    
+    if arquivo_upado and st.button("Iniciar Validação", type="primary"):
+        with open(TEMP_PARCEIRO, "wb") as f:
+            f.write(arquivo_upado.getbuffer())
+        
+        with st.spinner("Analisando regras de negócio..."):
+            erros = validar_parceiros(TEMP_PARCEIRO)
+        
+        exibir_relatorio_erros(erros)
+        if os.path.exists(TEMP_PARCEIRO): os.remove(TEMP_PARCEIRO)
+
+# === PÁGINA PRODUTOS ===
+elif st.session_state['pagina_atual'] == 'produtos':
+    st.header("Validação de Produtos")
+    arquivo_upado = st.file_uploader("Faça o upload do `produtos.csv`", type=["csv"])
+    
+    if arquivo_upado and st.button("Iniciar Validação", type="primary"):
+        with open(TEMP_PRODUTO, "wb") as f:
+            f.write(arquivo_upado.getbuffer())
+            
+        with st.spinner("Analisando NCMs, unidades e regras..."):
+            erros = validar_produtos(TEMP_PRODUTO)
+            
+        exibir_relatorio_erros(erros)
+        if os.path.exists(TEMP_PRODUTO): os.remove(TEMP_PRODUTO)
+
+# === PÁGINA ESTOQUE ===
+elif st.session_state['pagina_atual'] == 'estoque':
+    st.header("Validação de Estoque")
+    st.warning("⚠️ Necessário arquivo Mestre de Produtos exportado do ERP.")
+    
+    col_a, col_b = st.columns(2)
+    with col_a:
+        arquivo_estoque = st.file_uploader("1. Planilha de Estoque (`estoque.csv`)", type=["csv"])
+    with col_b:
+        arquivo_mestre = st.file_uploader("2. Mestre de Produtos (`mestre_produtos.csv`)", type=["csv"])
+
+    if arquivo_estoque and arquivo_mestre and st.button("Iniciar Validação Cruzada", type="primary"):
+        with open(TEMP_ESTOQUE, "wb") as f: f.write(arquivo_estoque.getbuffer())
+        with open(TEMP_MESTRE_PRODUTO, "wb") as f: f.write(arquivo_mestre.getbuffer())
+        
+        with st.spinner("Cruzando dados com o mestre..."):
+            erros = validar_estoque(TEMP_ESTOQUE)
+            
+        exibir_relatorio_erros(erros)
+        
+        # Limpeza
+        if os.path.exists(TEMP_ESTOQUE): os.remove(TEMP_ESTOQUE)
+        if os.path.exists(TEMP_MESTRE_PRODUTO): os.remove(TEMP_MESTRE_PRODUTO)

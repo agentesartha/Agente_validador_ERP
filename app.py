@@ -27,22 +27,21 @@ if 'pagina_atual' not in st.session_state:
 def set_pagina(nome_pagina):
     st.session_state['pagina_atual'] = nome_pagina
 
-# --- FUNÇÃO DE RELATÓRIO ---
+# --- FUNÇÃO DE RELATÓRIO (ALTERAR APENAS O BLOCO 'ELSE:') ---
 def exibir_relatorio_erros(erros):
     if erros is None:
         st.error("❌ A validação falhou e não pôde ser concluída.")
     elif not erros:
-        st.success("✅ SUCESSO! Nenhum erro encontrado. Planilha pronta para importação.")
-        st.balloons() 
+        st.success("✅ SUCESSO! Nenhum erro encontrado. Planilha pronta para importação.") 
     else:
-        # Exibe o título do erro na primeira linha (Mantido st.error original)
+        # Exibe o título do erro na primeira linha
         st.error(f"❌ Foram encontrados {len(erros)} erros.") 
         
-        # 1. Alinhamento: Usamos 2 colunas para empurrar o botão para a direita (8:2)
-        col_space, col_download = st.columns([7, 3]) 
+        # 1. Alinhamento: Usamos 2 colunas para criar um espaçador grande (7)
+        col_spacer, col_download = st.columns([7, 3]) 
         
         with col_download:
-            # Injetamos o container FLEXBOX para alinhar o botão à direita
+            # Injetamos um container FLEXBOX que alinha o conteúdo à direita
             st.markdown(
                 "<div style='display: flex; justify-content: flex-end; padding-top: 10px;'>", 
                 unsafe_allow_html=True
@@ -51,17 +50,16 @@ def exibir_relatorio_erros(erros):
             df_erros = pd.DataFrame(erros)
             csv_erros = df_erros.to_csv(index=False, sep=';', encoding='utf-8')
             
-            # Botão com cor neutra (secondary) e alinhado à direita
             st.download_button(
-                label="⬇️ BAIXAR RELATÓRIO",
+                label="⬇️ Baixar relatório",
                 data=csv_erros,
                 file_name='relatorio_erros_validacao.csv',
                 mime='text/csv',
                 type="secondary"
             )
-            st.markdown("</div>", unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True) # Fecha o container FLEX
 
-        # 2. Exibe a tabela
+        # 2. Exibe a tabela (abaixo do botão recuado)
         st.dataframe(
             df_erros, 
             use_container_width=True,

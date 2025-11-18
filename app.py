@@ -9,8 +9,8 @@ from validador_de_estoque import validar_estoque
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(
-    page_title="Validador ERP",
-    page_icon="logo.png", # Usa a logo na guia do navegador
+    page_title="Validador CSV",
+    page_icon="favicon.png", # Usa a logo na guia do navegador
     layout="wide"
 )
 

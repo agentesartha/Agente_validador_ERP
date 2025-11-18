@@ -2,119 +2,146 @@ import streamlit as st
 import pandas as pd
 import os
 
-# Importa as funções de validação que você criou
+# Importa as funções de validação
 from validador_de_parceiro import validar_parceiros
 from validador_de_produto import validar_produtos
 from validador_de_estoque import validar_estoque
 
-# --- Constantes para nomes de arquivos temporários ---
-# O Streamlit lida com arquivos em memória; nós os salvaremos
-# temporariamente com esses nomes para que nossos validadores 
-# (que esperam caminhos de arquivo) possam encontrá-los.
+# --- CONFIGURAÇÃO DA PÁGINA ---
+st.set_page_config(
+    page_title="Validador ERP",
+    page_icon="logo.png", # Usa a logo na guia do navegador
+    layout="wide"
+)
 
+# --- CONSTANTES ---
 TEMP_PARCEIRO = "temp_parceiros.csv"
 TEMP_PRODUTO = "temp_produtos.csv"
 TEMP_ESTOQUE = "temp_estoque.csv"
-TEMP_MESTRE_PRODUTO = "mestre_produtos.csv" # Nome exigido pelo validador de estoque
+TEMP_MESTRE_PRODUTO = "mestre_produtos.csv"
 
+# --- GERENCIAMENTO DE ESTADO (MEMÓRIA DO CLICK) ---
+if 'pagina_atual' not in st.session_state:
+    st.session_state['pagina_atual'] = 'home'
 
+def set_pagina(nome_pagina):
+    st.session_state['pagina_atual'] = nome_pagina
+
+# --- FUNÇÃO DE RELATÓRIO ---
 def exibir_relatorio_erros(erros):
-    """Função helper para mostrar o relatório de erros no Streamlit."""
     if erros is None:
-        st.error("❌ A validação falhou e não pôde ser concluída (Verifique os arquivos).")
+        st.error("❌ A validação falhou e não pôde ser concluída.")
     elif not erros:
-        st.success("✅ Nenhum erro encontrado. A planilha está pronta para importação!")
+        st.success("✅ SUCESSO! Nenhum erro encontrado. Planilha pronta para importação.")
+        st.balloons() 
     else:
-        st.error("❌ Erros de validação encontrados:")
+        st.error(f"❌ Foram encontrados {len(erros)} erros.")
         df_erros = pd.DataFrame(erros)
+        st.dataframe(
+            df_erros, 
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "linha": st.column_config.NumberColumn("Linha", format="%d"),
+                "coluna": "Nome da Coluna",
+                "valor_encontrado": "Valor Inválido",
+                "erro": "Descrição do Erro"
+            }
+        )
+
+# --- CABEÇALHO E LOGO ---
+col_logo, col_titulo = st.columns([1, 5])
+
+with col_logo:
+    try:
+        # Logo aumentada
+        st.image("logo.png", width=250) 
+    except:
+        st.warning("Logo não encontrada")
+
+with col_titulo:
+    st.title("Agente Validador de ERP")
+    st.markdown("##### Selecione abaixo qual tipo de planilha você deseja validar") # Frase mantida
+
+st.divider() 
+
+# --- BOTÕES DE NAVEGAÇÃO ---
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    if st.button("👥 Validar Parceiros", use_container_width=True):
+        set_pagina('parceiros')
+
+with col2:
+    if st.button("📦 Validar Produtos", use_container_width=True):
+        set_pagina('produtos')
+
+with col3:
+    if st.button("🏭 Validar Estoque", use_container_width=True):
+        set_pagina('estoque')
+
+st.divider()
+
+# --- CONTEÚDO DINÂMICO ---
+
+# 1. Tela Inicial (IF)
+if st.session_state['pagina_atual'] == 'home':
+    # O comando 'pass' é obrigatório aqui para o Python aceitar o bloco vazio
+    pass 
+
+# 2. Tela Parceiros (ELIF)
+elif st.session_state['pagina_atual'] == 'parceiros':
+    st.header("Validação de Parceiros")
+    st.subheader("Faça o upload do arquivo `parceiros.csv` abaixo:")
+    arquivo_upado = st.file_uploader(" ", type=["csv"], key="uploader_parceiros")
+    
+    if arquivo_upado and st.button("Iniciar Validação", type="primary", key="btn_parceiros"):
+        with open(TEMP_PARCEIRO, "wb") as f:
+            f.write(arquivo_upado.getbuffer())
         
-        # Formata o DataFrame para melhor visualização
-        df_erros = df_erros.set_index('linha')
-        df_erros = df_erros[['coluna', 'valor_encontrado', 'erro']]
-        st.dataframe(df_erros)
+        with st.spinner("Analisando regras de negócio..."):
+            erros = validar_parceiros(TEMP_PARCEIRO)
+        
+        exibir_relatorio_erros(erros)
+        if os.path.exists(TEMP_PARCEIRO): os.remove(TEMP_PARCEIRO)
 
-# --- Interface do Usuário (UI) ---
-
-st.set_page_config(layout="wide")
-st.title("🤖 Agente de Validação de Planilhas de ERP")
-st.subheader("Faça o upload dos arquivos para validação")
-
-# Menu de seleção para o tipo de validação
-tipo_validacao = st.selectbox(
-    "1. Qual planilha você quer validar?",
-    ("Selecione...", "Parceiros", "Produtos", "Estoque")
-)
-
-# --- LÓGICA DE VALIDAÇÃO ---
-
-if tipo_validacao == "Parceiros":
-    arquivo_upado = st.file_uploader("2. Faça o upload da planilha `parceiros.csv`", type="csv")
+# 3. Tela Produtos (ELIF)
+elif st.session_state['pagina_atual'] == 'produtos':
+    st.header("Validação de Produtos")
+    st.subheader("Faça o upload do arquivo `produtos.csv` abaixo:")
+    arquivo_upado = st.file_uploader(" ", type=["csv"], key="uploader_produtos")
     
-    if st.button("Validar Parceiros"):
-        if arquivo_upado is not None:
-            # Salva o arquivo temporariamente
-            with open(TEMP_PARCEIRO, "wb") as f:
-                f.write(arquivo_upado.getbuffer())
+    if arquivo_upado and st.button("Iniciar Validação", type="primary", key="btn_produtos"):
+        with open(TEMP_PRODUTO, "wb") as f:
+            f.write(arquivo_upado.getbuffer())
             
-            # Executa o validador
-            with st.spinner("Validando..."):
-                erros = validar_parceiros(TEMP_PARCEIRO)
+        with st.spinner("Analisando NCMs, unidades e regras..."):
+            erros = validar_produtos(TEMP_PRODUTO)
             
-            # Exibe os resultados
-            exibir_relatorio_erros(erros)
-            
-            # Limpa o arquivo temporário
-            os.remove(TEMP_PARCEIRO)
-        else:
-            st.warning("Por favor, faça o upload do arquivo.")
+        exibir_relatorio_erros(erros)
+        if os.path.exists(TEMP_PRODUTO): os.remove(TEMP_PRODUTO)
 
-# ---
-elif tipo_validacao == "Produtos":
-    arquivo_upado = st.file_uploader("2. Faça o upload da planilha `produtos.csv`", type="csv")
+# 4. Tela Estoque (ELIF)
+elif st.session_state['pagina_atual'] == 'estoque':
+    st.header("Validação de Estoque")
+    st.warning("⚠️ Atenção: Necessário arquivo Mestre de Produtos exportado do ERP.")
     
-    if st.button("Validar Produtos"):
-        if arquivo_upado is not None:
-            # Salva o arquivo temporariamente
-            with open(TEMP_PRODUTO, "wb") as f:
-                f.write(arquivo_upado.getbuffer())
+    col_a, col_b = st.columns(2)
+    with col_a:
+        st.subheader("1. Planilha de Estoque (`estoque.csv`)")
+        arquivo_estoque = st.file_uploader(" ", type=["csv"], key="uploader_estoque")
+    with col_b:
+        st.subheader("2. Mestre de Produtos (`mestre_produtos.csv`)")
+        arquivo_mestre = st.file_uploader(" ", type=["csv"], key="uploader_mestre_prod")
 
-            # Executa o validador
-            with st.spinner("Validando..."):
-                erros = validar_produtos(TEMP_PRODUTO)
-
-            # Exibe os resultados
-            exibir_relatorio_erros(erros)
-
-            # Limpa o arquivo temporário
-            os.remove(TEMP_PRODUTO)
-        else:
-            st.warning("Por favor, faça o upload do arquivo.")
-
-# ---
-elif tipo_validacao == "Estoque":
-    st.info("Para validar o Estoque, precisamos de 2 arquivos:")
-    
-    # O validador de estoque precisa de DOIS arquivos
-    arquivo_estoque = st.file_uploader("2. Faça o upload da planilha `estoque.csv`", type="csv")
-    arquivo_mestre_prod = st.file_uploader(f"3. Faça o upload do arquivo mestre `{TEMP_MESTRE_PRODUTO}`", type="csv")
-
-    if st.button("Validar Estoque"):
-        if arquivo_estoque is not None and arquivo_mestre_prod is not None:
-            # Salva os arquivos temporariamente com os nomes que o validador espera
-            with open(TEMP_ESTOQUE, "wb") as f:
-                f.write(arquivo_estoque.getbuffer())
-            with open(TEMP_MESTRE_PRODUTO, "wb") as f:
-                f.write(arquivo_mestre_prod.getbuffer())
+    if arquivo_estoque and arquivo_mestre and st.button("Iniciar Validação Cruzada", type="primary", key="btn_estoque"):
+        with open(TEMP_ESTOQUE, "wb") as f: f.write(arquivo_estoque.getbuffer())
+        with open(TEMP_MESTRE_PRODUTO, "wb") as f: f.write(arquivo_mestre.getbuffer())
+        
+        with st.spinner("Cruzando dados com o mestre..."):
+            erros = validar_estoque(TEMP_ESTOQUE)
             
-            # Executa o validador
-            with st.spinner("Carregando mestres e validando estoque..."):
-                erros = validar_estoque(TEMP_ESTOQUE)
-                
-            # Exibe os resultados
-            exibir_relatorio_erros(erros)
-
-            # Limpa os arquivos temporários
-            os.remove(TEMP_ESTOQUE)
-            os.remove(TEMP_MESTRE_PRODUTO)
-        else:
-            st.warning("Por favor, faça o upload dos DOIS arquivos.")
+        exibir_relatorio_erros(erros)
+        
+        if os.path.exists(TEMP_ESTOQUE): os.remove(TEMP_ESTOQUE)
+        if os.path.exists(TEMP_MESTRE_PRODUTO): os.remove(TEMP_MESTRE_PRODUTO)

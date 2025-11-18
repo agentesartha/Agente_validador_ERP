@@ -41,40 +41,54 @@ if 'pagina_atual' not in st.session_state:
 def set_pagina(nome_pagina):
     st.session_state['pagina_atual'] = nome_pagina
 
-# --- FUNÇÃO DE RELATÓRIO (COM BOTÃO ALINHADO) ---
+# --- FUNÇÃO DE RELATÓRIO ---
 def exibir_relatorio_erros(erros):
     if erros is None:
         st.error("❌ A validação falhou e não pôde ser concluída.")
     elif not erros:
         st.success("✅ SUCESSO! Nenhum erro encontrado. Planilha pronta para importação.")
     else:
-        # Cria 2 colunas para alinhar o texto e o botão
-        col_text, col_button = st.columns([6, 4]) 
+        # Exibe o título do erro na primeira linha (mantido o st.error original)
+        st.error(f"❌ Foram encontrados {len(erros)} erros.") 
         
-        # 1. Título de Erro na primeira coluna
-        with col_text:
-            # Texto de erro (usamos markdown para manter o estilo e tamanho do texto)
-            st.markdown(f"<p style='color: #E35353; font-size: 20px; font-weight: bold;'>❌ Foram encontrados {len(erros)} erros.</p>", unsafe_allow_html=True)
+        # --- NOVO BLOCO: ALINHAMENTO E COR DO BOTÃO ---
+        
+        # 1. Injetamos o CSS customizado com a cor desejada (vermelho-vinho, #A34C4C)
+        st.markdown(
+            """
+            <style>
+            /* Altera a cor de fundo do botão de download (targetando a classe) */
+            .stDownloadButton > button {
+                background-color: #A34C4C !important;
+                border-color: #A34C4C !important;
+                color: white !important;
+                font-weight: bold;
+                border-radius: 5px;
+            }
+            </style>
+            """, unsafe_allow_html=True
+        )
+
+        # 2. Criamos 2 colunas para empurrar o botão para a direita
+        col_space, col_download = st.columns([6, 4]) 
+        
+        with col_download:
+            # Criamos um pequeno padding para alinhar o botão verticalmente
+            st.markdown("<div style='padding-bottom: 10px;'>", unsafe_allow_html=True)
             
-        # 2. Botão de Download na segunda coluna
-        with col_button:
-            # Converte o DataFrame de erros para CSV
             df_erros = pd.DataFrame(erros)
             csv_erros = df_erros.to_csv(index=False, sep=';', encoding='utf-8')
             
-            # Ajusta o alinhamento vertical do botão com o texto
-            st.markdown("<div style='padding-top: 5px;'>", unsafe_allow_html=True) 
-
             st.download_button(
-                label="⬇️ Baixar relatório de erros completo",
+                label="⬇️ BAIXAR RELATÓRIO DE ERROS COMPLETO",
                 data=csv_erros,
                 file_name='relatorio_erros_validacao.csv',
                 mime='text/csv',
-                type="primary" # O botão primary agora é roxo (devido ao CSS injetado)
+                type="secondary" # Usamos secondary para aplicar o CSS customizado
             )
             st.markdown("</div>", unsafe_allow_html=True)
-        
-        # O resto do layout de erro continua aqui (a tabela)
+
+        # 3. Exibe a tabela (abaixo do botão recuado)
         st.dataframe(
             df_erros, 
             use_container_width=True,

@@ -27,39 +27,30 @@ if 'pagina_atual' not in st.session_state:
 def set_pagina(nome_pagina):
     st.session_state['pagina_atual'] = nome_pagina
 
-# --- FUNÇÃO DE RELATÓRIO (ALTERAR APENAS O BLOCO 'ELSE:') ---
+# --- FUNÇÃO DE RELATÓRIO (COM BOTÃO ALINHADO À ESQUERDA) ---
 def exibir_relatorio_erros(erros):
     if erros is None:
         st.error("❌ A validação falhou e não pôde ser concluída.")
     elif not erros:
-        st.success("✅ SUCESSO! Nenhum erro encontrado. Planilha pronta para importação.") 
+        st.success("✅ SUCESSO! Nenhum erro encontrado. Planilha pronta para importação.")
     else:
-        # Exibe o título do erro na primeira linha
+        # 1. Exibe a contagem de erros (Barra vermelha)
         st.error(f"❌ Foram encontrados {len(erros)} erros.") 
         
-        # 1. Alinhamento: Usamos 2 colunas para criar um espaçador grande (7)
-        col_spacer, col_download = st.columns([7, 3]) 
+        # 2. Prepara os dados
+        df_erros = pd.DataFrame(erros)
+        csv_erros = df_erros.to_csv(index=False, sep=';', encoding='utf-8')
         
-        with col_download:
-            # Injetamos um container FLEXBOX que alinha o conteúdo à direita
-            st.markdown(
-                "<div style='display: flex; justify-content: flex-end; padding-top: 10px;'>", 
-                unsafe_allow_html=True
-            )
-            
-            df_erros = pd.DataFrame(erros)
-            csv_erros = df_erros.to_csv(index=False, sep=';', encoding='utf-8')
-            
-            st.download_button(
-                label="⬇️ Baixar relatório",
-                data=csv_erros,
-                file_name='relatorio_erros_validacao.csv',
-                mime='text/csv',
-                type="secondary"
-            )
-            st.markdown("</div>", unsafe_allow_html=True) # Fecha o container FLEX
+        # 3. Coloca o botão diretamente aqui (alinha-se naturalmente à esquerda)
+        st.download_button(
+            label="⬇️ BAIXAR RELATÓRIO COMPLETO",
+            data=csv_erros,
+            file_name='relatorio_erros_validacao.csv',
+            mime='text/csv',
+            type="secondary" # Mantido como neutro/secondary
+        )
 
-        # 2. Exibe a tabela (abaixo do botão recuado)
+        # 4. Exibe a tabela
         st.dataframe(
             df_erros, 
             use_container_width=True,

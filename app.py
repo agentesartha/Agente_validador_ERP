@@ -27,10 +27,10 @@ if 'pagina_atual' not in st.session_state:
 def set_pagina(nome_pagina):
     st.session_state['pagina_atual'] = nome_pagina
 
-# --- FUNÇÃO DE RELATÓRIO (REMOVIDO OS BALÕES) ---
-def exibir_relatorio_erros(erros, df_corrigido): 
+# --- FUNÇÃO DE RELATÓRIO (CORRIGIDA PARA RECEBER 3 ARGUMENTOS) ---
+def exibir_relatorio_erros(erros, df_corrigido, nome_arquivo_corrigido): 
     
-    # 1. TRATAMENTO DE ERRO CRÍTICO (Quando o DF corrigido é None)
+    # Condição 1: TRATAMENTO DE ERRO CRÍTICO 
     if erros is None or df_corrigido is None:
         st.error("❌ A validação falhou e não pôde ser concluída. Motivo: Coluna obrigatória faltando, erro na leitura ou arquivo corrompido.")
         
@@ -43,13 +43,23 @@ def exibir_relatorio_erros(erros, df_corrigido):
     # 2. Caso de Sucesso
     elif not erros:
         st.success("✅ SUCESSO! Nenhum erro encontrado. Planilha pronta para importação.")
-        # Linha st.balloons() removida
+        # st.balloons() removido
+        
+        # Botão Download Sucesso
+        csv_corrigido = df_corrigido.to_csv(index=False, sep=';', encoding='utf-8')
+        st.download_button(
+            label="⬇️ BAIXAR PLANILHA CORRIGIDA (SEM ERROS)",
+            data=csv_corrigido,
+            file_name=nome_arquivo_corrigido, # Usa o terceiro argumento
+            mime='text/csv',
+            type="primary"
+        )
         
     # 3. Caso de Erros Encontrados (e o DF está OK para download)
     else:
         st.error(f"❌ Foram encontrados {len(erros)} erros.") 
         
-        # 1. Botões de Download (Em duas colunas)
+        # 1. Botões de Download (Erros e Planilha Corrigida)
         col_err, col_corr = st.columns(2)
         
         # Botão 1: Relatório de Erros
@@ -70,7 +80,7 @@ def exibir_relatorio_erros(erros, df_corrigido):
             st.download_button(
                 label="⬇️ BAIXAR PLANILHA CORRIGIDA",
                 data=csv_corrigido,
-                file_name='planilha_corrigida_com_erros.csv',
+                file_name=nome_arquivo_corrigido, # Usa o terceiro argumento
                 mime='text/csv',
                 type="primary"
             )

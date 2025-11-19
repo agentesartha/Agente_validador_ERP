@@ -27,30 +27,58 @@ if 'pagina_atual' not in st.session_state:
 def set_pagina(nome_pagina):
     st.session_state['pagina_atual'] = nome_pagina
 
-# --- FUNÇÃO DE RELATÓRIO (COM BOTÃO ALINHADO À ESQUERDA) ---
-def exibir_relatorio_erros(erros):
+# --- FUNÇÃO DE RELATÓRIO (COMPLETA COM OS DOIS BOTÕES) ---
+# AGORA RECEBE 'erros' E 'df_corrigido'
+def exibir_relatorio_erros(erros, df_corrigido):
     if erros is None:
-        st.error("❌ A validação falhou e não pôde ser concluída.")
+        st.error("❌ A validação falhou e não pôde ser concluída. (Erro de Leitura Crítico)")
     elif not erros:
         st.success("✅ SUCESSO! Nenhum erro encontrado. Planilha pronta para importação.")
+        st.balloons() 
+        
+        # 1. BOTÃO DOWNLOAD (CORRIGIDO) - Se não há erros, o botão principal é a planilha corrigida
+        csv_corrigido = df_corrigido.to_csv(index=False, sep=';', encoding='utf-8')
+        st.download_button(
+            label="⬇️ BAIXAR PLANILHA CORRIGIDA (SEM ERROS)",
+            data=csv_corrigido,
+            file_name='planilha_corrigida_sem_erros.csv',
+            mime='text/csv',
+            type="primary"
+        )
+        
     else:
-        # 1. Exibe a contagem de erros (Barra vermelha)
+        # Se houver erros, exibe a tabela de erros E os dois botões
+
         st.error(f"❌ Foram encontrados {len(erros)} erros.") 
         
-        # 2. Prepara os dados
-        df_erros = pd.DataFrame(erros)
-        csv_erros = df_erros.to_csv(index=False, sep=';', encoding='utf-8')
+        # 1. Botões de Download (Em duas colunas)
+        col_err, col_corr = st.columns(2)
         
-        # 3. Coloca o botão diretamente aqui (alinha-se naturalmente à esquerda)
-        st.download_button(
-            label="⬇️ BAIXAR RELATÓRIO COMPLETO",
-            data=csv_erros,
-            file_name='relatorio_erros_validacao.csv',
-            mime='text/csv',
-            type="secondary" # Mantido como neutro/secondary
-        )
+        # Botão 1: Relatório de Erros
+        with col_err:
+            df_erros = pd.DataFrame(erros)
+            csv_erros = df_erros.to_csv(index=False, sep=';', encoding='utf-8')
+            st.download_button(
+                label="⬇️ BAIXAR RELATÓRIO DE ERROS",
+                data=csv_erros,
+                file_name='relatorio_erros_validacao.csv',
+                mime='text/csv',
+                type="secondary"
+            )
+        
+        # Botão 2: Planilha Corrigida
+        with col_corr:
+            csv_corrigido = df_corrigido.to_csv(index=False, sep=';', encoding='utf-8')
+            st.download_button(
+                label="⬇️ BAIXAR PLANILHA CORRIGIDA",
+                data=csv_corrigido,
+                file_name='planilha_corrigida_com_erros.csv',
+                mime='text/csv',
+                type="primary"
+            )
 
-        # 4. Exibe a tabela
+        # 2. Exibe a tabela de erros
+        df_erros = pd.DataFrame(erros)
         st.dataframe(
             df_erros, 
             use_container_width=True,
@@ -62,6 +90,21 @@ def exibir_relatorio_erros(erros):
                 "erro": "Descrição do Erro"
             }
         )
+        
+# --- Mude a Chamada da Validação (Bloco Parceiros) ---
+# Você precisa mudar a chamada na função 'app.py' para desestruturar os dois resultados:
+
+# No bloco 'elif st.session_state['pagina_atual'] == 'parceiros':', a chamada deve ser:
+# ANTES: erros = validar_parceiros(TEMP_PARCEIRO)
+# DEPOIS:
+#
+# resultados = validar_parceiros(TEMP_PARCEIRO)
+# if resultados is None:
+#     erros, df_corrigido = None, None
+# else:
+#     erros, df_corrigido = resultados # Recebe a lista de erros E o DF
+#
+# exibir_relatorio_erros(erros, df_corrigido)
 
 # --- CABEÇALHO E LOGO ---
 # Usamos [1, 4, 1] para balancear a logo e centralizar visualmente o texto

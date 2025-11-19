@@ -160,6 +160,8 @@ def validar_parceiros(caminho_arquivo):
             if not cep_limpo: adicionar_erro('CEP', row['CEP'], "Campo obrigatório (CEP) está vazio.")
             elif not cep_limpo.isdigit() or len(cep_limpo) != 8: adicionar_erro('CEP', row['CEP'], "Formato inválido. CEP deve ter 8 dígitos numéricos.")
 
+   # ... (no final da função validar_parceiros) ...
+    
     # Retorna o DF com as correções e a lista de erros
     if erros_encontrados:
         df_erros = pd.DataFrame(erros_encontrados)

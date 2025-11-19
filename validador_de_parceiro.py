@@ -2,16 +2,38 @@ import pandas as pd
 import re
 import sys
 
-# --- Funções Universais e Mapeamento ---
+# --- Funções Universais de Limpeza ---
+def limpar_documento(doc_series):
+    """Remove pontuação de CPF/CNPJ para validação."""
+    return doc_series.astype(str).str.replace(r'[./-]', '', regex=True).str.strip()
 
-# Dicionário de Mapeamento: Aceita as variações mais comuns e o nome do ERP
+def limpar_valor_monetario(df, coluna):
+    """Remove R$, pontos de milhar e substitui vírgula por ponto decimal."""
+    if coluna in df.columns:
+        df[coluna] = df[coluna].astype(str).str.strip().str.upper()
+        df[coluna] = df[coluna].str.replace('R$', '', regex=False)
+        df[coluna] = df[coluna].str.replace('$', '', regex=False)
+        df[coluna] = df[coluna].str.replace('.', '', regex=False) # Remove ponto de milhar
+        df[coluna] = df[coluna].str.replace(',', '.', regex=False) # Substitui vírgula decimal
+        df[coluna] = pd.to_numeric(df[coluna], errors='coerce') 
+    return df
+
+# --- Mapeamento de Colunas (ATUALIZADO) ---
 MAPEAMENTO_COLUNAS = {
-    'CGC_CPF': ['CGC_CPF', 'CNPJ', 'CPF', 'DOCUMENTO', 'DOC'],
-    'TIPPESSOA': ['TIPPESSOA', 'TIPO_PESSOA', 'TIPO'],
-    'NOMEPARC': ['NOMEPARC', 'NOME', 'NOME_FANTASIA'],
+    # CRÍTICAS
+    'CGC_CPF': ['CGC_CPF', 'CNPJ_CPF', 'DOCUMENTO', 'DOC', 'CPF_CNPJ'],
+    'AD_IDEXTERNO': ['AD_IDEXTERNO', 'COD_SIST_ANTERIOR', 'ID_LEGADO', 'ID_ORIGEM'],
     'RAZAOSOCIAL': ['RAZAOSOCIAL', 'RAZAO_SOCIAL'],
-    'ID_EXTERNO_CODEND': ['ID_EXTERNO_CODEND', 'COD_ENDERECO', 'CODEND'],
-    'AD_IDEXTERNO': ['AD_IDEXTERNO', 'ID_LEGADO', 'ID_ORIGEM']
+    'NOMEPARC': ['NOMEPARC', 'NOME_FANTASIA', 'NOME'],
+    'TIPPESSOA': ['TIPPESSOA', 'TIPO_PESSOA', 'TIPO'],
+    
+    # NÃO CRÍTICAS (Domínio/Formato)
+    'ATIVO': ['ATIVO'],
+    'CLIENTE': ['CLIENTE'],
+    'FORNECEDOR': ['FORNECEDOR'],
+    'CEP': ['CEP'],
+    'TELEFONE': ['TELEFONE'],
+    'EMAIL': ['EMAIL']
 }
 
 def mapear_colunas(df, mapeamento):
@@ -21,20 +43,15 @@ def mapear_colunas(df, mapeamento):
     
     for nome_oficial, alternativas in mapeamento.items():
         for alt in alternativas:
-            alt_upper = alt.upper() # Padroniza a alternativa para maiúscula
+            alt_upper = alt.upper()
             if alt_upper in df.columns:
-                # Se encontrou, renomeia e para (prioriza a primeira alternativa encontrada)
                 colunas_encontradas[alt_upper] = nome_oficial
                 break 
     
     df.rename(columns=colunas_encontradas, inplace=True)
     return df
+# --- Funções de Validação (CPF/CNPJ) ---
 
-def limpar_documento(doc_series):
-    """Remove pontuação de CPF/CNPJ para validação."""
-    return doc_series.astype(str).str.replace(r'[./-]', '', regex=True).str.strip()
-
-# [Funções de validação CPF/CNPJ omitidas por brevidade, mas devem estar no arquivo]
 def _calcular_digito_cpf(cpf_parcial):
     soma = 0; fator = len(cpf_parcial) + 1
     for digito in cpf_parcial: soma += int(digito) * fator; fator -= 1
@@ -78,18 +95,16 @@ def validar_parceiros(caminho_arquivo):
     df = df.fillna('')
 
     # ----------------------------------------------------
-    # 2. PRÉ-PROCESSAMENTO (Mapeamento de Colunas)
+    # 2. PRÉ-PROCESSAMENTO (CORREÇÃO DE HEADERS E CRIAÇÃO DE COLUNAS LIMPAS)
     # ----------------------------------------------------
     
-    # 🚨 PASSO NOVO: Limpa e Renomeia as colunas 🚨
+    # 🚨 PASSO CRÍTICO: Mapeia e Padroniza os cabeçalhos 🚨
     df = mapear_colunas(df, MAPEAMENTO_COLUNAS)
 
-    # 2.1 Verificação de colunas críticas APÓS o mapeamento
-    colunas_criticas = ['CGC_CPF', 'TIPPESSOA', 'AD_IDEXTERNO', 'NOMEPARC', 'RAZAOSOCIAL', 'ATIVO', 'CLIENTE', 'FORNECEDOR']
-    for col in colunas_criticas:
+    colunas_criticas_checar = ['CGC_CPF', 'TIPPESSOA', 'AD_IDEXTERNO', 'NOMEPARC', 'RAZAOSOCIAL', 'ATIVO', 'CLIENTE', 'FORNECEDOR']
+    for col in colunas_criticas_checar:
         if col not in df.columns:
-            # Retorna erro amigável, informando que a coluna não foi encontrada (nem nos aliases)
-            return [{"linha": 0, "coluna": col, "valor_encontrado": "-", "erro": f"Coluna obrigatória '{col}' não encontrada no cabeçalho do arquivo."}], None
+            return [{"linha": 0, "coluna": col, "valor_encontrado": "-", "erro": f"Coluna obrigatória '{col}' não foi encontrada após o mapeamento."}], None
 
     tem_cep = 'CEP' in df.columns
     
@@ -101,7 +116,6 @@ def validar_parceiros(caminho_arquivo):
     # 3. VALIDAÇÃO DE REGRAS (LINHA A LINHA)
     # ----------------------------------------------------
     for index, row in df.iterrows():
-        # ... (O restante da validação continua aqui, usando CGC_CPF e TIPPESSOA) ...
         linha_num = index + 2 
         
         def adicionar_erro(coluna, valor, mensagem):
@@ -114,7 +128,7 @@ def validar_parceiros(caminho_arquivo):
         if not row['AD_IDEXTERNO']: adicionar_erro('AD_IDEXTERNO', row['AD_IDEXTERNO'], "Campo obrigatório está vazio.")
         if not row['NOMEPARC']: adicionar_erro('NOMEPARC', row['NOMEPARC'], "Campo obrigatório (Nome do Parceiro) está vazio.")
         
-        # [Obrigatório]
+        # [Domínio] TIPPESSOA
         if not tipo_pessoa: adicionar_erro('TIPPESSOA', row['TIPPESSOA'], "Campo obrigatório (Tipo de Pessoa) está vazio.")
         elif tipo_pessoa not in ('F', 'J'): adicionar_erro('TIPPESSOA', row['TIPPESSOA'], "Valor inválido. Permitido apenas 'F' ou 'J'.")
 

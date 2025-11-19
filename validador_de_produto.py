@@ -114,8 +114,14 @@ def validar_produtos(caminho_arquivo):
             df[f'{col}_original'] = df[col].copy()
     
     # CORREÇÃO 1: Limpar NCM (remover pontos, traços)
-    df['NCM'] = df['NCM'].astype(str).str.replace(r'[./-\s]', '', regex=True).str.strip()
-    
+    df['NCM'] = df['NCM'].astype(str).str.replace('.', '', regex=False)\
+                     .str.replace('/', '', regex=False)\
+                     .str.replace('-', '', regex=False)\
+                     .str.replace(' ', '', regex=False)\
+                     .str.strip()
+                     
+    df = limpar_valor_monetario(df, 'PRECO_VENDA')
+
     # CORREÇÃO 2: Padronizar UNIDADE
     df['UNIDADE'] = df['UNIDADE'].str.upper().str.strip()
     # Tentar mapear unidades por extenso

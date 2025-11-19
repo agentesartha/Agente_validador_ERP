@@ -27,75 +27,94 @@ if 'pagina_atual' not in st.session_state:
 def set_pagina(nome_pagina):
     st.session_state['pagina_atual'] = nome_pagina
 
-# --- FUNÇÃO DE RELATÓRIO (CORRIGIDA PARA RECEBER 3 ARGUMENTOS) ---
-def exibir_relatorio_erros(erros, df_corrigido, nome_arquivo_corrigido): 
-    
-    # Condição 1: TRATAMENTO DE ERRO CRÍTICO 
-    if erros is None or df_corrigido is None:
-        st.error("❌ A validação falhou e não pôde ser concluída. Motivo: Coluna obrigatória faltando, erro na leitura ou arquivo corrompido.")
-        
-        if erros is not None and isinstance(erros, list):
-             df_erros = pd.DataFrame(erros)
-             st.subheader("Detalhes do Erro Crítico:")
-             st.dataframe(df_erros, use_container_width=True, hide_index=True)
+# --- FUNÇÃO DE RELATÓRIO CORRIGIDA (Com Métricas e Cores Revertidas) ---
+def exibir_relatorio_erros(erros, df_corrigido=None, nome_arquivo_corrigido="planilha_corrigida.csv"):
+    if erros is None:
+        st.error("❌ A validação falhou e não pôde ser concluída.")
         return
-
-    # 2. Caso de Sucesso
     elif not erros:
         st.success("✅ SUCESSO! Nenhum erro encontrado. Planilha pronta para importação.")
-        # st.balloons() removido
         
-        # Botão Download Sucesso
+        # Botão Download SUCESSO (Cor primária OK aqui)
         csv_corrigido = df_corrigido.to_csv(index=False, sep=';', encoding='utf-8')
         st.download_button(
             label="⬇️ BAIXAR PLANILHA CORRIGIDA (SEM ERROS)",
             data=csv_corrigido,
-            file_name=nome_arquivo_corrigido, # Usa o terceiro argumento
+            file_name=nome_arquivo_corrigido,
             mime='text/csv',
             type="primary"
         )
-        
-    # 3. Caso de Erros Encontrados (e o DF está OK para download)
+        return
+    
     else:
-        st.error(f"❌ Foram encontrados {len(erros)} erros.") 
+        # Separa erros por tipo
+        erros_corrigiveis = [e for e in erros if e.get('corrigido', False)]
+        erros_manuais = [e for e in erros if not e.get('corrigido', False)]
         
-        # 1. Botões de Download (Erros e Planilha Corrigida)
-        col_err, col_corr = st.columns(2)
+        # Estatísticas
+        total_erros = len(erros)
+        total_corrigidos = len(erros_corrigiveis)
+        total_manuais = len(erros_manuais)
         
-        # Botão 1: Relatório de Erros
-        with col_err:
+        # 1. EXIBE AS MÉTRICAS (Contadores)
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total de Erros", total_erros)
+        with col2:
+            st.metric("✅ Corrigidos Auto.", total_corrigidos)
+        with col3:
+            st.metric("⚠️ Requerem Atenção", total_manuais)
+        
+        st.divider()
+
+        # 2. Exibe Aviso (Barra Amarela/Verde - Full Width)
+        if total_manuais > 0:
+            st.warning(f"⚠️ {total_manuais} erro(s) requerem correção manual.")
+        
+        if total_corrigidos > 0:
+            st.info(f"✨ {total_corrigidos} erro(s) foram corrigidos automaticamente!")
+        
+        # 3. Botões de Download (Erros e Planilha Corrigida)
+        col_btn1, col_btn2 = st.columns(2)
+        
+        with col_btn1:
+            # Botão 1: Relatório de Erros (Neutro/Secundário)
             df_erros = pd.DataFrame(erros)
             csv_erros = df_erros.to_csv(index=False, sep=';', encoding='utf-8')
             st.download_button(
-                label="⬇️ BAIXAR RELATÓRIO DE ERROS",
+                label="📄 BAIXAR RELATÓRIO DE ERROS",
                 data=csv_erros,
                 file_name='relatorio_erros_validacao.csv',
                 mime='text/csv',
                 type="secondary"
             )
         
-        # Botão 2: Planilha Corrigida
-        with col_corr:
+        with col_btn2:
+            # Botão 2: Planilha Corrigida (Primário, Mas Usuário Quer NEUTRO)
+            # Mantenho Primário para ser mais visível, mas se o usuário detesta o vermelho, 
+            # troco para secundário aqui também. Vou usar secundário.
             csv_corrigido = df_corrigido.to_csv(index=False, sep=';', encoding='utf-8')
             st.download_button(
-                label="⬇️ BAIXAR PLANILHA CORRIGIDA",
+                label="✅ BAIXAR PLANILHA CORRIGIDA",
                 data=csv_corrigido,
-                file_name=nome_arquivo_corrigido, # Usa o terceiro argumento
+                file_name=nome_arquivo_corrigido,
                 mime='text/csv',
-                type="primary"
+                type="secondary" # Cor Neutra/Secundária
             )
 
-        # 2. Exibe a tabela de erros
-        df_erros = pd.DataFrame(erros)
+        # 4. Tabela de erros
+        st.subheader("Detalhamento dos Erros")
         st.dataframe(
             df_erros, 
             use_container_width=True,
             hide_index=True,
             column_config={
                 "linha": st.column_config.NumberColumn("Linha", format="%d"),
-                "coluna": "Nome da Coluna",
-                "valor_encontrado": "Valor Inválido",
-                "erro": "Descrição do Erro"
+                "coluna": "Coluna",
+                "valor_encontrado": "Valor Original",
+                "valor_corrigido": "Valor Corrigido",
+                "erro": "Descrição",
+                "corrigido": st.column_config.CheckboxColumn("Auto-Corrigido")
             }
         )
 

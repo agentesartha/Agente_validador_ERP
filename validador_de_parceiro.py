@@ -2,7 +2,39 @@ import pandas as pd
 import re
 import sys
 
-# --- Funções de Validação (CPF/CNPJ) ---
+# --- Funções Universais e Mapeamento ---
+
+# Dicionário de Mapeamento: Aceita as variações mais comuns e o nome do ERP
+MAPEAMENTO_COLUNAS = {
+    'CGC_CPF': ['CGC_CPF', 'CNPJ', 'CPF', 'DOCUMENTO', 'DOC'],
+    'TIPPESSOA': ['TIPPESSOA', 'TIPO_PESSOA', 'TIPO'],
+    'NOMEPARC': ['NOMEPARC', 'NOME', 'NOME_FANTASIA'],
+    'RAZAOSOCIAL': ['RAZAOSOCIAL', 'RAZAO_SOCIAL'],
+    'ID_EXTERNO_CODEND': ['ID_EXTERNO_CODEND', 'COD_ENDERECO', 'CODEND'],
+    'AD_IDEXTERNO': ['AD_IDEXTERNO', 'ID_LEGADO', 'ID_ORIGEM']
+}
+
+def mapear_colunas(df, mapeamento):
+    """Renomeia colunas do DF para os nomes oficiais do script."""
+    colunas_encontradas = {}
+    df.columns = df.columns.str.upper().str.strip() # Limpeza de headers
+    
+    for nome_oficial, alternativas in mapeamento.items():
+        for alt in alternativas:
+            alt_upper = alt.upper() # Padroniza a alternativa para maiúscula
+            if alt_upper in df.columns:
+                # Se encontrou, renomeia e para (prioriza a primeira alternativa encontrada)
+                colunas_encontradas[alt_upper] = nome_oficial
+                break 
+    
+    df.rename(columns=colunas_encontradas, inplace=True)
+    return df
+
+def limpar_documento(doc_series):
+    """Remove pontuação de CPF/CNPJ para validação."""
+    return doc_series.astype(str).str.replace(r'[./-]', '', regex=True).str.strip()
+
+# [Funções de validação CPF/CNPJ omitidas por brevidade, mas devem estar no arquivo]
 def _calcular_digito_cpf(cpf_parcial):
     soma = 0; fator = len(cpf_parcial) + 1
     for digito in cpf_parcial: soma += int(digito) * fator; fator -= 1
@@ -14,6 +46,7 @@ def validar_cpf(cpf):
     cpf_parcial = cpf[:9]; digito1 = _calcular_digito_cpf(cpf_parcial)
     cpf_parcial += str(digito1); digito2 = _calcular_digito_cpf(cpf_parcial)
     return cpf == f"{cpf[:9]}{digito1}{digito2}"
+
 def _calcular_digito_cnpj(cnpj_parcial):
     soma = 0; fatores = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
     if len(cnpj_parcial) == 13: fatores.insert(0, 6)
@@ -26,9 +59,6 @@ def validar_cnpj(cnpj):
     cnpj_parcial += str(digito1); digito2 = _calcular_digito_cnpj(cnpj_parcial)
     return cnpj == f"{cnpj[:12]}{digito1}{digito2}"
 
-def limpar_documento(doc_series):
-    """Remove pontuação de CPF/CNPJ para validação."""
-    return doc_series.astype(str).str.replace(r'[./-]', '', regex=True).str.strip()
 
 def validar_parceiros(caminho_arquivo):
     erros_encontrados = []
@@ -48,16 +78,17 @@ def validar_parceiros(caminho_arquivo):
     df = df.fillna('')
 
     # ----------------------------------------------------
-    # 2. PRÉ-PROCESSAMENTO (CORREÇÃO DE HEADERS E CRIAÇÃO DE COLUNAS LIMPAS)
+    # 2. PRÉ-PROCESSAMENTO (Mapeamento de Colunas)
     # ----------------------------------------------------
     
-    # 2.1 Limpeza de Cabeçalhos (Resolve KeyErrors por espaço/caixa)
-    df.columns = df.columns.str.upper().str.strip() 
+    # 🚨 PASSO NOVO: Limpa e Renomeia as colunas 🚨
+    df = mapear_colunas(df, MAPEAMENTO_COLUNAS)
 
-    # 🚨 Adicionado ID_EXTERNO_CODEND 🚨
-    colunas_criticas = ['CGC_CPF', 'TIPPESSOA', 'AD_IDEXTERNO', 'NOMEPARC', 'RAZAOSOCIAL', 'ATIVO', 'CLIENTE', 'FORNECEDOR', 'ID_EXTERNO_CODEND']
+    # 2.1 Verificação de colunas críticas APÓS o mapeamento
+    colunas_criticas = ['CGC_CPF', 'TIPPESSOA', 'AD_IDEXTERNO', 'NOMEPARC', 'RAZAOSOCIAL', 'ATIVO', 'CLIENTE', 'FORNECEDOR']
     for col in colunas_criticas:
         if col not in df.columns:
+            # Retorna erro amigável, informando que a coluna não foi encontrada (nem nos aliases)
             return [{"linha": 0, "coluna": col, "valor_encontrado": "-", "erro": f"Coluna obrigatória '{col}' não encontrada no cabeçalho do arquivo."}], None
 
     tem_cep = 'CEP' in df.columns
@@ -70,6 +101,7 @@ def validar_parceiros(caminho_arquivo):
     # 3. VALIDAÇÃO DE REGRAS (LINHA A LINHA)
     # ----------------------------------------------------
     for index, row in df.iterrows():
+        # ... (O restante da validação continua aqui, usando CGC_CPF e TIPPESSOA) ...
         linha_num = index + 2 
         
         def adicionar_erro(coluna, valor, mensagem):
@@ -82,23 +114,38 @@ def validar_parceiros(caminho_arquivo):
         if not row['AD_IDEXTERNO']: adicionar_erro('AD_IDEXTERNO', row['AD_IDEXTERNO'], "Campo obrigatório está vazio.")
         if not row['NOMEPARC']: adicionar_erro('NOMEPARC', row['NOMEPARC'], "Campo obrigatório (Nome do Parceiro) está vazio.")
         
-        # [Obrigatório] ID_EXTERNO_CODEND (Não deve estar vazio, pois é o ID/Nome do endereço)
-        if not row['ID_EXTERNO_CODEND']: adicionar_erro('ID_EXTERNO_CODEND', row['ID_EXTERNO_CODEND'], "Campo obrigatório (ID/Nome do Endereço) está vazio.")
-        
-        # [Domínio] TIPPESSOA
+        # [Obrigatório]
         if not tipo_pessoa: adicionar_erro('TIPPESSOA', row['TIPPESSOA'], "Campo obrigatório (Tipo de Pessoa) está vazio.")
         elif tipo_pessoa not in ('F', 'J'): adicionar_erro('TIPPESSOA', row['TIPPESSOA'], "Valor inválido. Permitido apenas 'F' ou 'J'.")
 
-        # [Obrigatório] ATIVO, CLIENTE, FORNECEDOR (Valida valor original sem correção)
+        # [Obrigatório] ATIVO, CLIENTE, FORNECEDOR
         for col_dom in ['ATIVO', 'CLIENTE', 'FORNECEDOR']:
             if row[col_dom].upper() not in ('S', 'N'): adicionar_erro(col_dom, row[col_dom], "Valor inválido. Esperado 'S' ou 'N'.")
 
         # --- VALIDAÇÃO CONDICIONAL (CPF/CNPJ) ---
         documento = row['CGC_CPF_limpo']
-        # ... (restante da validação condicional) ...
+        if not documento: adicionar_erro('CGC_CPF', row['CGC_CPF'], "Campo obrigatório (CNPJ/CPF) está vazio.")
+        elif tipo_pessoa == 'F':
+            if len(documento) != 11: adicionar_erro('CGC_CPF', row['CGC_CPF'], f"Tipo Pessoa 'F', mas documento tem {len(documento)} dígitos (esperado 11).")
+            elif not validar_cpf(documento): adicionar_erro('CGC_CPF', row['CGC_CPF'], "Tipo Pessoa 'F', mas o CPF é inválido (dígito verificador não confere).")
+        elif tipo_pessoa == 'J':
+            if len(documento) != 14: adicionar_erro('CGC_CPF', row['CGC_CPF'], f"Tipo Pessoa 'J', mas documento tem {len(documento)} dígitos (esperado 14).")
+            elif not validar_cnpj(documento): adicionar_erro('CGC_CPF', row['CGC_CPF'], "Tipo Pessoa 'J', mas o CNPJ é inválido (dígito verificador não confere).")
 
-    # Retorna APENAS erros e o DF para manter a função de chamada compatível
+        # [Regra de Negócio] Razão Social vs Nome (para PF)
+        if tipo_pessoa == 'F' and row['NOMEPARC'] != row['RAZAOSOCIAL']:
+             adicionar_erro('RAZAOSOCIAL', row['RAZAOSOCIAL'], "Para Pessoa Física, a Razão Social deve ser IDÊNTICA ao Nome do Parceiro.")
+             
+        # [Formato] CEP
+        if tem_cep:
+            cep_limpo = row['CEP'].astype(str).str.replace(r'[^0-9]', '', regex=True).str.strip()
+            if not cep_limpo: adicionar_erro('CEP', row['CEP'], "Campo obrigatório (CEP) está vazio.")
+            elif not cep_limpo.isdigit() or len(cep_limpo) != 8: adicionar_erro('CEP', row['CEP'], "Formato inválido. CEP deve ter 8 dígitos numéricos.")
+
+
+    # Retorna APENAS erros e o DF
     if erros_encontrados:
         df_erros = pd.DataFrame(erros_encontrados)
         return df_erros.drop_duplicates().to_dict('records'), df
+    
     return [], df

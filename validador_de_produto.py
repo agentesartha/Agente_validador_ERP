@@ -47,6 +47,20 @@ def mapear_colunas(df, mapeamento):
                 break 
     df.rename(columns=colunas_encontradas, inplace=True)
     return df
+# --- ADICIONE ESTA FUNÇÃO AO VALIDADOR DE PRODUTOS ---
+
+def limpar_valor_monetario(df, coluna):
+    """Remove R$, pontos de milhar e substitui vírgula por ponto decimal."""
+    if coluna in df.columns:
+        df[coluna] = df[coluna].astype(str).str.strip().str.upper()
+        df[coluna] = df[coluna].str.replace('R$', '', regex=False)
+        df[coluna] = df[coluna].str.replace('$', '', regex=False)
+        df[coluna] = df[coluna].str.replace('.', '', regex=False) # Remove ponto de milhar
+        df[coluna] = df[coluna].str.replace(',', '.', regex=False) # Substitui vírgula decimal
+        df[coluna] = pd.to_numeric(df[coluna], errors='coerce') 
+    return df
+
+# --- FIM DA FUNÇÃO ---
 
 # --- Função Principal de Validação ---
 

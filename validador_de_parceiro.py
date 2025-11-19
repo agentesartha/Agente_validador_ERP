@@ -48,11 +48,12 @@ def validar_cnpj(cnpj):
 def validar_parceiros(caminho_arquivo):
     """
     Função principal para carregar e validar a planilha de parceiros (TGFPAR).
+    Retorna: (lista_erros, dataframe_corrigido)
     """
     erros_encontrados = []
     
     # ----------------------------------------------------
-    # 1. CARREGAR OS DADOS (ROBUSTO CONTRA DELIMITERS/ENCODING)
+    # 1. CARREGAR OS DADOS
     # ----------------------------------------------------
     df = None
     erro_leitura = "Formato desconhecido"
@@ -69,33 +70,53 @@ def validar_parceiros(caminho_arquivo):
             continue 
 
     if df is None:
-        return [{"linha": 0, "coluna": "Arquivo", "valor_encontrado": "N/A", "erro": f"Erro crítico de leitura. Detalhe: {erro_leitura}"}]
+        return [{"linha": 0, "coluna": "Arquivo", "valor_encontrado": "N/A", "erro": f"Erro crítico de leitura. Detalhe: {erro_leitura}"}], None
     
     df = df.fillna('')
 
     # ----------------------------------------------------
-    # 2. PRÉ-PROCESSAMENTO E VERIFICAÇÃO DE COLUNAS CRÍTICAS
+    # 2. VERIFICAÇÃO DE COLUNAS CRÍTICAS
     # ----------------------------------------------------
     
     colunas_criticas = ['CGC_CPF', 'TIPPESSOA', 'AD_IDEXTERNO', 'NOMEPARC', 'RAZAOSOCIAL']
     for col in colunas_criticas:
         if col not in df.columns:
-            return [{"linha": 0, "coluna": col, "valor_encontrado": "-", "erro": f"Coluna obrigatória '{col}' não encontrada."}]
+            return [{"linha": 0, "coluna": col, "valor_encontrado": "-", "erro": f"Coluna obrigatória '{col}' não encontrada."}], None
 
-    # Limpeza
-    df['CGC_CPF_limpo'] = df['CGC_CPF'].str.replace(r'[./-]', '', regex=True).str.strip()
-    df['TIPPESSOA_limpo'] = df['TIPPESSOA'].str.upper().str.strip()
-    
-    tem_cep = 'CEP' in df.columns
-    if tem_cep:
-        df['CEP_limpo'] = df['CEP'].str.replace('-', '', regex=True).str.strip()
-    
     # ----------------------------------------------------
-    # 2.5. VALIDAÇÃO DE DUPLICIDADE (EM LOTE)
+    # 3. APLICAR CORREÇÕES AUTOMÁTICAS
     # ----------------------------------------------------
     
-    duplicados_bool = df.duplicated(subset=['CGC_CPF_limpo'], keep=False)
-    nao_vazios_bool = df['CGC_CPF_limpo'] != ''
+    # Criar colunas de trabalho (preserva originais)
+    df['CGC_CPF_original'] = df['CGC_CPF'].copy()
+    df['TIPPESSOA_original'] = df['TIPPESSOA'].copy()
+    
+    # CORREÇÃO 1: Limpar CGC_CPF (remover pontos, traços, barras e espaços)
+    df['CGC_CPF'] = df['CGC_CPF'].str.replace(r'[./-\s]', '', regex=True).str.strip()
+    
+    # CORREÇÃO 2: Padronizar TIPPESSOA (uppercase e trim)
+    df['TIPPESSOA'] = df['TIPPESSOA'].str.upper().str.strip()
+    
+    # CORREÇÃO 3: Limpar espaços extras em campos de texto
+    df['NOMEPARC'] = df['NOMEPARC'].str.strip()
+    df['RAZAOSOCIAL'] = df['RAZAOSOCIAL'].str.strip()
+    df['AD_IDEXTERNO'] = df['AD_IDEXTERNO'].str.strip()
+    
+    # CORREÇÃO 4: Corrigir Razão Social para Pessoa Física
+    for index, row in df.iterrows():
+        if row['TIPPESSOA'] == 'F' and row['NOMEPARC'] and not row['RAZAOSOCIAL']:
+            df.at[index, 'RAZAOSOCIAL'] = row['NOMEPARC']
+    
+    # CORREÇÃO 5: Limpar CEP se existir
+    if 'CEP' in df.columns:
+        df['CEP'] = df['CEP'].str.replace('-', '', regex=False).str.strip()
+    
+    # ----------------------------------------------------
+    # 4. VALIDAÇÃO DE DUPLICIDADE
+    # ----------------------------------------------------
+    
+    duplicados_bool = df.duplicated(subset=['CGC_CPF'], keep=False)
+    nao_vazios_bool = df['CGC_CPF'] != ''
     df_duplicados = df[duplicados_bool & nao_vazios_bool]
 
     if not df_duplicados.empty:
@@ -103,71 +124,100 @@ def validar_parceiros(caminho_arquivo):
             erros_encontrados.append({
                 "linha": index + 2,
                 "coluna": "CGC_CPF",
-                "valor_encontrado": str(row['CGC_CPF']),
-                "erro": "Este CNPJ/CPF está duplicado em outra(s) linha(s) da planilha."
+                "valor_encontrado": str(row['CGC_CPF_original']),
+                "valor_corrigido": "",
+                "erro": "Este CNPJ/CPF está duplicado em outra(s) linha(s) da planilha.",
+                "corrigido": False
             })
 
     # ----------------------------------------------------
-    # 3. VALIDAÇÃO DE REGRAS (LINHA A LINHA)
+    # 5. VALIDAÇÃO LINHA A LINHA
     # ----------------------------------------------------
+    
     print(f"Iniciando validação de {len(df)} parceiros...")
 
     for index, row in df.iterrows():
         linha_num = index + 2 
         
-        def adicionar_erro(coluna, valor, mensagem):
+        def adicionar_erro(coluna, valor_original, valor_corrigido, mensagem, foi_corrigido=False):
             erros_encontrados.append({
                 "linha": linha_num,
                 "coluna": coluna,
-                "valor_encontrado": str(valor),
-                "erro": mensagem
+                "valor_encontrado": str(valor_original),
+                "valor_corrigido": str(valor_corrigido) if foi_corrigido else "",
+                "erro": mensagem,
+                "corrigido": foi_corrigido
             })
+
+        # Registrar correções aplicadas
+        if row['CGC_CPF'] != row['CGC_CPF_original']:
+            adicionar_erro('CGC_CPF', row['CGC_CPF_original'], row['CGC_CPF'], 
+                          "Formatação corrigida (removidos pontos, traços e espaços).", True)
+        
+        if row['TIPPESSOA'] != row['TIPPESSOA_original']:
+            adicionar_erro('TIPPESSOA', row['TIPPESSOA_original'], row['TIPPESSOA'], 
+                          "Padronizado para maiúscula.", True)
 
         # [Obrigatório] AD_IDEXTERNO
         if not row['AD_IDEXTERNO']:
-            adicionar_erro('AD_IDEXTERNO', row['AD_IDEXTERNO'], "Campo obrigatório está vazio.")
+            adicionar_erro('AD_IDEXTERNO', row['AD_IDEXTERNO'], "", 
+                          "Campo obrigatório está vazio.", False)
         
         # [Obrigatório] NOMEPARC
         if not row['NOMEPARC']:
-            adicionar_erro('NOMEPARC', row['NOMEPARC'], "Campo obrigatório (Nome do Parceiro) está vazio.")
+            adicionar_erro('NOMEPARC', row['NOMEPARC'], "", 
+                          "Campo obrigatório (Nome do Parceiro) está vazio.", False)
         
         # [Domínio] TIPPESSOA
-        tipo_pessoa = row['TIPPESSOA_limpo']
+        tipo_pessoa = row['TIPPESSOA']
         if not tipo_pessoa:
-            adicionar_erro('TIPPESSOA', row['TIPPESSOA'], "Campo obrigatório (Tipo de Pessoa) está vazio.")
+            adicionar_erro('TIPPESSOA', row['TIPPESSOA_original'], "", 
+                          "Campo obrigatório (Tipo de Pessoa) está vazio.", False)
         elif tipo_pessoa not in ('F', 'J'):
-            adicionar_erro('TIPPESSOA', row['TIPPESSOA'], "Valor inválido. Permitido apenas 'F' ou 'J'.")
+            adicionar_erro('TIPPESSOA', row['TIPPESSOA_original'], "", 
+                          "Valor inválido. Permitido apenas 'F' ou 'J'.", False)
 
-        # --- VALIDAÇÃO CONDICIONAL (CPF/CNPJ) ---
-        documento = row['CGC_CPF_limpo']
+        # --- VALIDAÇÃO CPF/CNPJ ---
+        documento = row['CGC_CPF']
         
         if not documento:
-            adicionar_erro('CGC_CPF', row['CGC_CPF'], "Campo obrigatório (CNPJ/CPF) está vazio.")
+            adicionar_erro('CGC_CPF', row['CGC_CPF_original'], "", 
+                          "Campo obrigatório (CNPJ/CPF) está vazio.", False)
         
         elif tipo_pessoa == 'F':
             if len(documento) != 11:
-                adicionar_erro('CGC_CPF', row['CGC_CPF'], f"Tipo Pessoa 'F', mas documento tem {len(documento)} dígitos (esperado 11).")
+                adicionar_erro('CGC_CPF', row['CGC_CPF_original'], "", 
+                              f"Tipo Pessoa 'F', mas documento tem {len(documento)} dígitos (esperado 11).", False)
             elif not validar_cpf(documento):
-                adicionar_erro('CGC_CPF', row['CGC_CPF'], "Tipo Pessoa 'F', mas o CPF é inválido (dígito verificador não confere).")
+                adicionar_erro('CGC_CPF', row['CGC_CPF_original'], "", 
+                              "Tipo Pessoa 'F', mas o CPF é inválido (dígito verificador não confere).", False)
                     
         elif tipo_pessoa == 'J':
             if len(documento) != 14:
-                adicionar_erro('CGC_CPF', row['CGC_CPF'], f"Tipo Pessoa 'J', mas documento tem {len(documento)} dígitos (esperado 14).")
+                adicionar_erro('CGC_CPF', row['CGC_CPF_original'], "", 
+                              f"Tipo Pessoa 'J', mas documento tem {len(documento)} dígitos (esperado 14).", False)
             elif not validar_cnpj(documento):
-                adicionar_erro('CGC_CPF', row['CGC_CPF'], "Tipo Pessoa 'J', mas o CNPJ é inválido (dígito verificador não confere).")
+                adicionar_erro('CGC_CPF', row['CGC_CPF_original'], "", 
+                              "Tipo Pessoa 'J', mas o CNPJ é inválido (dígito verificador não confere).", False)
 
         # [Regra de Negócio] Razão Social vs Nome (para PF)
-        if tipo_pessoa == 'F' and row['NOMEPARC'] != row['RAZAOSOCIAL']:
-             adicionar_erro('RAZAOSOCIAL', row['RAZAOSOCIAL'], "Para Pessoa Física, a Razão Social deve ser IDÊNTICA ao Nome do Parceiro.")
+        if tipo_pessoa == 'F' and row['NOMEPARC'] and row['NOMEPARC'] != row['RAZAOSOCIAL']:
+            # Se corrigimos automaticamente
+            if row['RAZAOSOCIAL'] == row['NOMEPARC']:
+                adicionar_erro('RAZAOSOCIAL', "", row['RAZAOSOCIAL'], 
+                              "Para Pessoa Física, Razão Social foi igualada ao Nome do Parceiro.", True)
+            else:
+                adicionar_erro('RAZAOSOCIAL', row['RAZAOSOCIAL'], "", 
+                              "Para Pessoa Física, a Razão Social deve ser IDÊNTICA ao Nome do Parceiro.", False)
              
     print(f"Validação concluída. Total de erros encontrados: {len(erros_encontrados)}")
     
-    # Retorna a lista de erros (removendo duplicatas exatas se houver)
+    # Remover colunas auxiliares antes de retornar
+    df_corrigido = df.drop(columns=['CGC_CPF_original', 'TIPPESSOA_original'], errors='ignore')
+    
+    # Retorna erros e DataFrame corrigido
     if erros_encontrados:
         df_erros = pd.DataFrame(erros_encontrados)
-        return df_erros.drop_duplicates().to_dict('records')
+        return df_erros.drop_duplicates().to_dict('records'), df_corrigido
     
-    return []
-
-# --- Bloco de Execução Principal (NÃO USADO QUANDO IMPORTADO PELO APP.PY) ---
-# ... (restante do código não alterado) ...
+    return [], df_corrigido

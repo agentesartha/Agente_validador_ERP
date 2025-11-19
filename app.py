@@ -10,7 +10,7 @@ from validador_de_estoque import validar_estoque
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(
     page_title="Validador ERP",
-    page_icon="favicon.png", # Usa o arquivo favicon.png
+    page_icon="favicon.png",
     layout="wide"
 )
 
@@ -20,52 +20,90 @@ TEMP_PRODUTO = "temp_produtos.csv"
 TEMP_ESTOQUE = "temp_estoque.csv"
 TEMP_MESTRE_PRODUTO = "mestre_produtos.csv"
 
-# --- GERENCIAMENTO DE ESTADO (MEMÓRIA DO CLICK) ---
+# --- GERENCIAMENTO DE ESTADO ---
 if 'pagina_atual' not in st.session_state:
     st.session_state['pagina_atual'] = 'home'
 
 def set_pagina(nome_pagina):
     st.session_state['pagina_atual'] = nome_pagina
 
-# --- FUNÇÃO DE RELATÓRIO (COM BOTÃO ALINHADO À ESQUERDA) ---
-def exibir_relatorio_erros(erros):
+# --- FUNÇÃO DE RELATÓRIO MELHORADA ---
+def exibir_relatorio_erros(erros, df_corrigido=None, nome_arquivo_corrigido="planilha_corrigida.csv"):
     if erros is None:
         st.error("❌ A validação falhou e não pôde ser concluída.")
     elif not erros:
         st.success("✅ SUCESSO! Nenhum erro encontrado. Planilha pronta para importação.")
         st.balloons() 
     else:
-        # 1. Exibe a contagem de erros (Barra vermelha)
-        st.error(f"❌ Foram encontrados {len(erros)} erros.") 
+        # Separa erros por tipo
+        erros_corrigiveis = [e for e in erros if e.get('corrigido', False)]
+        erros_manuais = [e for e in erros if not e.get('corrigido', False)]
         
-        # 2. Prepara os dados
-        df_erros = pd.DataFrame(erros)
-        csv_erros = df_erros.to_csv(index=False, sep=';', encoding='utf-8')
+        # Estatísticas
+        total_erros = len(erros)
+        total_corrigidos = len(erros_corrigiveis)
+        total_manuais = len(erros_manuais)
         
-        # 3. Coloca o botão diretamente aqui (alinha-se naturalmente à esquerda)
-        st.download_button(
-            label="⬇️ BAIXAR RELATÓRIO COMPLETO",
-            data=csv_erros,
-            file_name='relatorio_erros_validacao.csv',
-            mime='text/csv',
-            type="secondary" # Mantido como neutro/secondary
-        )
+        # Exibe resumo
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total de Erros", total_erros)
+        with col2:
+            st.metric("✅ Corrigidos Auto.", total_corrigidos)
+        with col3:
+            st.metric("⚠️ Requerem Atenção", total_manuais)
+        
+        # Mensagem de status
+        if total_manuais > 0:
+            st.warning(f"⚠️ {total_manuais} erro(s) requerem correção manual.")
+        
+        if total_corrigidos > 0:
+            st.info(f"✨ {total_corrigidos} erro(s) foram corrigidos automaticamente!")
+        
+        # Botões de download
+        col_btn1, col_btn2 = st.columns(2)
+        
+        with col_btn1:
+            # Relatório de erros
+            df_erros = pd.DataFrame(erros)
+            csv_erros = df_erros.to_csv(index=False, sep=';', encoding='utf-8')
+            st.download_button(
+                label="📄 BAIXAR RELATÓRIO DE ERROS",
+                data=csv_erros,
+                file_name='relatorio_erros_validacao.csv',
+                mime='text/csv',
+                type="secondary"
+            )
+        
+        with col_btn2:
+            # Planilha corrigida (se disponível)
+            if df_corrigido is not None:
+                csv_corrigido = df_corrigido.to_csv(index=False, sep=';', encoding='utf-8')
+                st.download_button(
+                    label="✅ BAIXAR PLANILHA CORRIGIDA",
+                    data=csv_corrigido,
+                    file_name=nome_arquivo_corrigido,
+                    mime='text/csv',
+                    type="primary"
+                )
 
-        # 4. Exibe a tabela
+        # Tabela de erros
+        st.subheader("Detalhamento dos Erros")
         st.dataframe(
             df_erros, 
             use_container_width=True,
             hide_index=True,
             column_config={
                 "linha": st.column_config.NumberColumn("Linha", format="%d"),
-                "coluna": "Nome da Coluna",
-                "valor_encontrado": "Valor Inválido",
-                "erro": "Descrição do Erro"
+                "coluna": "Coluna",
+                "valor_encontrado": "Valor Original",
+                "valor_corrigido": "Valor Corrigido",
+                "erro": "Descrição",
+                "corrigido": st.column_config.CheckboxColumn("Auto-Corrigido")
             }
         )
 
 # --- CABEÇALHO E LOGO ---
-# Usamos [1, 4, 1] para balancear a logo e centralizar visualmente o texto
 col_logo, col_center, col_right_spacer = st.columns([1, 4, 1])
 
 with col_logo:
@@ -75,10 +113,7 @@ with col_logo:
         st.warning("Logo não encontrada")
 
 with col_center:
-    # 1. Título principal CENTRALIZADO
     st.markdown("<h1 style='text-align: center; font-size: 32px; padding-top: 20px;'>Agente Validador de ERP</h1>", unsafe_allow_html=True)
-    
-    # 2. Subtítulo CENTRALIZADO
     st.markdown("<h5 style='text-align: center; margin-top: 10px;'>Selecione abaixo qual tipo de planilha você deseja validar</h5>", unsafe_allow_html=True)
 
 st.divider() 
@@ -104,43 +139,41 @@ st.divider()
 
 # 1. Tela Inicial (HOME)
 if st.session_state['pagina_atual'] == 'home':
-    pass 
+    st.info("💡 **Novidade:** O sistema agora corrige automaticamente erros simples como formatação, espaços extras, e padronização de campos!")
 
-# 2. Tela Parceiros (ELIF)
+# 2. Tela Parceiros
 elif st.session_state['pagina_atual'] == 'parceiros':
     st.header("Validação de Parceiros")
     st.subheader("Faça o upload do arquivo `parceiros.csv` abaixo:")
     arquivo_upado = st.file_uploader(" ", type=["csv"], key="uploader_parceiros")
     
-    # Botão Iniciar Validação com type="secondary" (cor neutra)
     if arquivo_upado and st.button("Iniciar Validação", type="secondary", key="btn_parceiros"):
         with open(TEMP_PARCEIRO, "wb") as f:
             f.write(arquivo_upado.getbuffer())
         
-        with st.spinner("Analisando regras de negócio..."):
-            erros = validar_parceiros(TEMP_PARCEIRO)
+        with st.spinner("Analisando regras de negócio e aplicando correções..."):
+            erros, df_corrigido = validar_parceiros(TEMP_PARCEIRO)
         
-        exibir_relatorio_erros(erros)
+        exibir_relatorio_erros(erros, df_corrigido, "parceiros_corrigido.csv")
         if os.path.exists(TEMP_PARCEIRO): os.remove(TEMP_PARCEIRO)
 
-# 3. Tela Produtos (ELIF)
+# 3. Tela Produtos
 elif st.session_state['pagina_atual'] == 'produtos':
     st.header("Validação de Produtos")
     st.subheader("Faça o upload do arquivo `produtos.csv` abaixo:")
     arquivo_upado = st.file_uploader(" ", type=["csv"], key="uploader_produtos")
     
-    # Botão Iniciar Validação com type="secondary" (cor neutra)
     if arquivo_upado and st.button("Iniciar Validação", type="secondary", key="btn_produtos"):
         with open(TEMP_PRODUTO, "wb") as f:
             f.write(arquivo_upado.getbuffer())
             
-        with st.spinner("Analisando NCMs, unidades e regras..."):
-            erros = validar_produtos(TEMP_PRODUTO)
+        with st.spinner("Analisando NCMs, unidades, regras e corrigindo..."):
+            erros, df_corrigido = validar_produtos(TEMP_PRODUTO)
             
-        exibir_relatorio_erros(erros)
+        exibir_relatorio_erros(erros, df_corrigido, "produtos_corrigido.csv")
         if os.path.exists(TEMP_PRODUTO): os.remove(TEMP_PRODUTO)
 
-# 4. Tela Estoque (ELIF)
+# 4. Tela Estoque
 elif st.session_state['pagina_atual'] == 'estoque':
     st.header("Validação de Estoque")
     st.warning("⚠️ Atenção: Necessário arquivo Mestre de Produtos exportado do ERP.")
@@ -153,15 +186,14 @@ elif st.session_state['pagina_atual'] == 'estoque':
         st.subheader("2. Mestre de Produtos (`mestre_produtos.csv`)")
         arquivo_mestre = st.file_uploader(" ", type=["csv"], key="uploader_mestre_prod")
 
-    # Botão Iniciar Validação com type="secondary" (cor neutra)
     if arquivo_estoque and arquivo_mestre and st.button("Iniciar Validação Cruzada", type="secondary", key="btn_estoque"):
         with open(TEMP_ESTOQUE, "wb") as f: f.write(arquivo_estoque.getbuffer())
         with open(TEMP_MESTRE_PRODUTO, "wb") as f: f.write(arquivo_mestre.getbuffer())
         
-        with st.spinner("Cruzando dados com o mestre..."):
-            erros = validar_estoque(TEMP_ESTOQUE)
+        with st.spinner("Cruzando dados com o mestre e corrigindo..."):
+            erros, df_corrigido = validar_estoque(TEMP_ESTOQUE)
             
-        exibir_relatorio_erros(erros)
+        exibir_relatorio_erros(erros, df_corrigido, "estoque_corrigido.csv")
         
         if os.path.exists(TEMP_ESTOQUE): os.remove(TEMP_ESTOQUE)
         if os.path.exists(TEMP_MESTRE_PRODUTO): os.remove(TEMP_MESTRE_PRODUTO)

@@ -27,15 +27,26 @@ if 'pagina_atual' not in st.session_state:
 def set_pagina(nome_pagina):
     st.session_state['pagina_atual'] = nome_pagina
 
-# --- FUNÇÃO DE RELATÓRIO ---
-def exibir_relatorio_erros(erros, df_corrigido): # Recebe os 2 argumentos
-    if erros is None:
-        st.error("❌ A validação falhou e não pôde ser concluída. (Erro de Leitura Crítico)")
+# --- FUNÇÃO DE RELATÓRIO (CORRIGIDA PARA TRATAR 'None' NO DATAFRAME) ---
+def exibir_relatorio_erros(erros, df_corrigido): 
+    
+    # Condição 1: TRATAMENTO DE ERRO CRÍTICO (Quando o DF corrigido é None)
+    if erros is None or df_corrigido is None:
+        st.error("❌ A validação falhou e não pôde ser concluída. Motivo: Coluna obrigatória faltando, ou erro crítico na leitura do arquivo.")
+        
+        # Se 'erros' não for None, exibe a lista de KeyErrors que impediram a continuidade
+        if erros is not None:
+             df_erros = pd.DataFrame(erros)
+             st.subheader("Detalhes do Erro Crítico:")
+             st.dataframe(df_erros, use_container_width=True, hide_index=True)
+        return
+
+    # 2. Caso de Sucesso
     elif not erros:
         st.success("✅ SUCESSO! Nenhum erro encontrado. Planilha pronta para importação.")
         st.balloons() 
         
-        # 1. BOTÃO DOWNLOAD (CORRIGIDO) - Se não há erros, o botão principal é a planilha corrigida
+        # Botão Download Sucesso
         csv_corrigido = df_corrigido.to_csv(index=False, sep=';', encoding='utf-8')
         st.download_button(
             label="⬇️ BAIXAR PLANILHA CORRIGIDA (SEM ERROS)",
@@ -45,12 +56,11 @@ def exibir_relatorio_erros(erros, df_corrigido): # Recebe os 2 argumentos
             type="primary"
         )
         
+    # 3. Caso de Erros Encontrados (e o DF está OK para download)
     else:
-        # Se houver erros, exibe a tabela de erros E o botão de planilha corrigida
-
         st.error(f"❌ Foram encontrados {len(erros)} erros.") 
         
-        # 1. Botões de Download (Em duas colunas)
+        # 1. Botões de Download (Erros e Planilha Corrigida)
         col_err, col_corr = st.columns(2)
         
         # Botão 1: Relatório de Erros

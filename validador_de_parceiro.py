@@ -54,24 +54,33 @@ def validar_parceiros(caminho_arquivo):
     erros_encontrados = []
     
     # ----------------------------------------------------
-    # 1. CARREGAR OS DADOS (ROBUSTO CONTRA DELIMITERS/ENCODING)
+    # 1. CARREGAR OS DADOS (AGORA FORÇANDO IGNORAR ERROS DE ENCODING)
     # ----------------------------------------------------
     df = None
     erro_leitura = "Formato desconhecido"
-    tentativas = [(';', 'latin-1'), (',', 'latin-1'), (';', 'utf-8'), (',', 'utf-8')]
 
-    for sep, enc in tentativas:
-        try:
-            df_temp = pd.read_csv(caminho_arquivo, sep=sep, encoding=enc, dtype=str, engine='python')
-            if len(df_temp.columns) > 1: df = df_temp; break 
-        except Exception as e:
-            erro_leitura = str(e); continue 
+    # Tentamos ler como UTF-8 (o formato correto), ignorando bytes inválidos
+    try:
+        # engine='python' é mais lento mas resolve o erro de tokenização.
+        # encoding_errors='ignore' força o Python a pular caracteres problemáticos.
+        df_temp = pd.read_csv(caminho_arquivo, sep=';', encoding='utf-8', encoding_errors='ignore', dtype=str, engine='python')
+        
+        # Se o separador não for o correto (só 1 coluna), tenta vírgula
+        if len(df_temp.columns) < 2:
+            df = pd.read_csv(caminho_arquivo, sep=',', encoding='utf-8', encoding_errors='ignore', dtype=str, engine='python')
+        else:
+            df = df_temp
+            
+    except Exception as e:
+        # Se falhou mesmo ignorando erros, a corrupção é grave.
+        return [{"linha": 0, "coluna": "Arquivo", "valor_encontrado": "N/A", "erro": f"ERRO FATAL DE DADOS. O arquivo pode estar corrompido. Detalhe: {str(e)}"}], None
 
     if df is None:
-        return [{"linha": 0, "coluna": "Arquivo", "valor_encontrado": "N/A", "erro": f"Erro crítico de leitura. Detalhe: {erro_leitura}"}], None
-    
-    df = df.fillna('')
+        # Isso só deve acontecer se a leitura falhar completamente após a segunda tentativa
+        return [{"linha": 0, "coluna": "Arquivo", "valor_encontrado": "N/A", "erro": f"ERRO FATAL DE LEITURA. Não foi possível ler o arquivo com vírgula ou ponto e vírgula."}], None
 
+    df = df.fillna('')
+    
     # ----------------------------------------------------
     # 2. PRÉ-PROCESSAMENTO E CORREÇÕES
     # ----------------------------------------------------

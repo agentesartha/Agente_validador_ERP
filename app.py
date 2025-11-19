@@ -10,7 +10,7 @@ from validador_de_estoque import validar_estoque
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(
     page_title="Validador ERP",
-    page_icon="favicon.png", 
+    page_icon="favicon.png", # Usa o arquivo favicon.png
     layout="wide"
 )
 
@@ -27,67 +27,31 @@ if 'pagina_atual' not in st.session_state:
 def set_pagina(nome_pagina):
     st.session_state['pagina_atual'] = nome_pagina
 
-# --- FUNÇÃO DE RELATÓRIO (CORRIGIDA PARA TRATAR 'None' NO DATAFRAME) ---
-def exibir_relatorio_erros(erros, df_corrigido): 
-    
-    # Condição 1: TRATAMENTO DE ERRO CRÍTICO (Quando o DF corrigido é None)
-    if erros is None or df_corrigido is None:
-        st.error("❌ A validação falhou e não pôde ser concluída. Motivo: Coluna obrigatória faltando, ou erro crítico na leitura do arquivo.")
-        
-        # Se 'erros' não for None, exibe a lista de KeyErrors que impediram a continuidade
-        if erros is not None:
-             df_erros = pd.DataFrame(erros)
-             st.subheader("Detalhes do Erro Crítico:")
-             st.dataframe(df_erros, use_container_width=True, hide_index=True)
-        return
-
-    # 2. Caso de Sucesso
+# --- FUNÇÃO DE RELATÓRIO (COM BOTÃO ALINHADO À ESQUERDA) ---
+def exibir_relatorio_erros(erros):
+    if erros is None:
+        st.error("❌ A validação falhou e não pôde ser concluída.")
     elif not erros:
         st.success("✅ SUCESSO! Nenhum erro encontrado. Planilha pronta para importação.")
         st.balloons() 
-        
-        # Botão Download Sucesso
-        csv_corrigido = df_corrigido.to_csv(index=False, sep=';', encoding='utf-8')
-        st.download_button(
-            label="⬇️ BAIXAR PLANILHA CORRIGIDA (SEM ERROS)",
-            data=csv_corrigido,
-            file_name='planilha_corrigida_sem_erros.csv',
-            mime='text/csv',
-            type="primary"
-        )
-        
-    # 3. Caso de Erros Encontrados (e o DF está OK para download)
     else:
+        # 1. Exibe a contagem de erros (Barra vermelha)
         st.error(f"❌ Foram encontrados {len(erros)} erros.") 
         
-        # 1. Botões de Download (Erros e Planilha Corrigida)
-        col_err, col_corr = st.columns(2)
-        
-        # Botão 1: Relatório de Erros
-        with col_err:
-            df_erros = pd.DataFrame(erros)
-            csv_erros = df_erros.to_csv(index=False, sep=';', encoding='utf-8')
-            st.download_button(
-                label="⬇️ BAIXAR RELATÓRIO DE ERROS",
-                data=csv_erros,
-                file_name='relatorio_erros_validacao.csv',
-                mime='text/csv',
-                type="secondary"
-            )
-        
-        # Botão 2: Planilha Corrigida
-        with col_corr:
-            csv_corrigido = df_corrigido.to_csv(index=False, sep=';', encoding='utf-8')
-            st.download_button(
-                label="⬇️ BAIXAR PLANILHA CORRIGIDA",
-                data=csv_corrigido,
-                file_name='planilha_corrigida_com_erros.csv',
-                mime='text/csv',
-                type="primary"
-            )
-
-        # 2. Exibe a tabela de erros
+        # 2. Prepara os dados
         df_erros = pd.DataFrame(erros)
+        csv_erros = df_erros.to_csv(index=False, sep=';', encoding='utf-8')
+        
+        # 3. Coloca o botão diretamente aqui (alinha-se naturalmente à esquerda)
+        st.download_button(
+            label="⬇️ BAIXAR RELATÓRIO COMPLETO",
+            data=csv_erros,
+            file_name='relatorio_erros_validacao.csv',
+            mime='text/csv',
+            type="secondary" # Mantido como neutro/secondary
+        )
+
+        # 4. Exibe a tabela
         st.dataframe(
             df_erros, 
             use_container_width=True,
@@ -154,17 +118,9 @@ elif st.session_state['pagina_atual'] == 'parceiros':
             f.write(arquivo_upado.getbuffer())
         
         with st.spinner("Analisando regras de negócio..."):
-            # AQUI: Chamada que recebe ERROS E O DATAFRAME CORRIGIDO
-            resultados = validar_parceiros(TEMP_PARCEIRO)
+            erros = validar_parceiros(TEMP_PARCEIRO)
         
-        if resultados is None:
-            erros, df_corrigido = None, None
-        else:
-            erros, df_corrigido = resultados # Recebe a lista de erros E o DF
-
-        # CORREÇÃO: Passa os DOIS argumentos para a função
-        exibir_relatorio_erros(erros, df_corrigido) 
-        
+        exibir_relatorio_erros(erros)
         if os.path.exists(TEMP_PARCEIRO): os.remove(TEMP_PARCEIRO)
 
 # 3. Tela Produtos (ELIF)
@@ -179,17 +135,9 @@ elif st.session_state['pagina_atual'] == 'produtos':
             f.write(arquivo_upado.getbuffer())
             
         with st.spinner("Analisando NCMs, unidades e regras..."):
-            # AQUI: Chamada que recebe ERROS E O DATAFRAME CORRIGIDO
-            resultados = validar_produtos(TEMP_PRODUTO)
-
-        if resultados is None:
-            erros, df_corrigido = None, None
-        else:
-            erros, df_corrigido = resultados # Recebe a lista de erros E o DF
+            erros = validar_produtos(TEMP_PRODUTO)
             
-        # CORREÇÃO: Passa os DOIS argumentos para a função
-        exibir_relatorio_erros(erros, df_corrigido) 
-        
+        exibir_relatorio_erros(erros)
         if os.path.exists(TEMP_PRODUTO): os.remove(TEMP_PRODUTO)
 
 # 4. Tela Estoque (ELIF)
@@ -211,16 +159,9 @@ elif st.session_state['pagina_atual'] == 'estoque':
         with open(TEMP_MESTRE_PRODUTO, "wb") as f: f.write(arquivo_mestre.getbuffer())
         
         with st.spinner("Cruzando dados com o mestre..."):
-            # AQUI: Chamada que recebe ERROS E O DATAFRAME CORRIGIDO
-            resultados = validar_estoque(TEMP_ESTOQUE)
-
-        if resultados is None:
-            erros, df_corrigido = None, None
-        else:
-            erros, df_corrigido = resultados # Recebe a lista de erros E o DF
+            erros = validar_estoque(TEMP_ESTOQUE)
             
-        # CORREÇÃO: Passa os DOIS argumentos para a função
-        exibir_relatorio_erros(erros, df_corrigido) 
+        exibir_relatorio_erros(erros)
         
         if os.path.exists(TEMP_ESTOQUE): os.remove(TEMP_ESTOQUE)
         if os.path.exists(TEMP_MESTRE_PRODUTO): os.remove(TEMP_MESTRE_PRODUTO)

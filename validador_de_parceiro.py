@@ -2,109 +2,93 @@ import pandas as pd
 import re
 import sys
 
-# --- Funções Universais de Limpeza ---
-MAP_SIM_NAO = {'SIM': 'S', 'S': 'S', 'NÃO': 'N', 'NAO': 'N', 'N': 'N', 'YES': 'S', 'NO': 'N'}
-
-def limpar_documento(doc_series):
-    """Remove pontuação de CPF/CNPJ."""
-    return doc_series.astype(str).str.replace(r'[./-]', '', regex=True).str.strip()
-
-def limpar_valor_monetario(df, coluna):
-    """Remove R$, pontos de milhar e substitui vírgula por ponto decimal."""
-    if coluna in df.columns:
-        df[coluna] = df[coluna].astype(str).str.strip().str.upper()
-        df[coluna] = df[coluna].str.replace('R$', '', regex=False)
-        df[coluna] = df[coluna].str.replace('$', '', regex=False)
-        df[coluna] = df[coluna].str.replace('.', '', regex=False) # Remove ponto de milhar
-        df[coluna] = df[coluna].str.replace(',', '.', regex=False) # Substitui vírgula decimal
-        df[coluna] = pd.to_numeric(df[coluna], errors='coerce') 
-    return df
-
-# --- Funções de Validação (CPF/CNPJ) ---
-
+# --- Funções de Validação de Documentos (CPF/CNPJ) ---
 def _calcular_digito_cpf(cpf_parcial):
-    soma = 0; fator = len(cpf_parcial) + 1
-    for digito in cpf_parcial: soma += int(digito) * fator; fator -= 1
+    """Calcula um dígito verificador de CPF."""
+    soma = 0
+    fator = len(cpf_parcial) + 1
+    for digito in cpf_parcial:
+        soma += int(digito) * fator
+        fator -= 1
     resto = soma % 11
     return 0 if resto < 2 else 11 - resto
 
 def validar_cpf(cpf):
+    """Valida um CPF completo (11 dígitos)."""
     if not cpf.isdigit() or len(cpf) != 11: return False
     if len(set(cpf)) == 1: return False
-    cpf_parcial = cpf[:9]; digito1 = _calcular_digito_cpf(cpf_parcial)
-    cpf_parcial += str(digito1); digito2 = _calcular_digito_cpf(cpf_parcial)
+    cpf_parcial = cpf[:9]
+    digito1 = _calcular_digito_cpf(cpf_parcial)
+    cpf_parcial += str(digito1)
+    digito2 = _calcular_digito_cpf(cpf_parcial)
     return cpf == f"{cpf[:9]}{digito1}{digito2}"
 
 def _calcular_digito_cnpj(cnpj_parcial):
-    soma = 0; fatores = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+    """Calcula um dígito verificador de CNPJ."""
+    soma = 0
+    fatores = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
     if len(cnpj_parcial) == 13: fatores.insert(0, 6)
-    for i, digito in enumerate(cnpj_parcial): soma += int(digito) * fatores[i]; resto = soma % 11
+    for i, digito in enumerate(cnpj_parcial):
+        soma += int(digito) * fatores[i]
+    resto = soma % 11
     return 0 if resto < 2 else 11 - resto
 
 def validar_cnpj(cnpj):
+    """Valida um CNPJ completo (14 dígitos)."""
     if not cnpj.isdigit() or len(cnpj) != 14: return False
     if len(set(cnpj)) == 1: return False
-    cnpj_parcial = cnpj[:12]; digito1 = _calcular_digito_cnpj(cnpj_parcial)
-    cnpj_parcial += str(digito1); digito2 = _calcular_digito_cnpj(cnpj_parcial)
+    cnpj_parcial = cnpj[:12]
+    digito1 = _calcular_digito_cnpj(cnpj_parcial)
+    cnpj_parcial += str(digito1)
+    digito2 = _calcular_digito_cnpj(cnpj_parcial)
     return cnpj == f"{cnpj[:12]}{digito1}{digito2}"
 
 # --- Função Principal de Validação ---
 
 def validar_parceiros(caminho_arquivo):
+    """
+    Função principal para carregar e validar a planilha de parceiros (TGFPAR).
+    """
     erros_encontrados = []
     
     # ----------------------------------------------------
-    # 1. CARREGAR OS DADOS (AGORA FORÇANDO IGNORAR ERROS DE ENCODING)
+    # 1. CARREGAR OS DADOS (ROBUSTO CONTRA DELIMITERS/ENCODING)
     # ----------------------------------------------------
     df = None
     erro_leitura = "Formato desconhecido"
+    tentativas = [(';', 'latin-1'), (',', 'latin-1'), (';', 'utf-8'), (',', 'utf-8')]
 
-    # Tentamos ler como UTF-8 (o formato correto), ignorando bytes inválidos
-    try:
-        # engine='python' é mais lento mas resolve o erro de tokenização.
-        # encoding_errors='ignore' força o Python a pular caracteres problemáticos.
-        df_temp = pd.read_csv(caminho_arquivo, sep=';', encoding='utf-8', encoding_errors='ignore', dtype=str, engine='python')
-        
-        # Se o separador não for o correto (só 1 coluna), tenta vírgula
-        if len(df_temp.columns) < 2:
-            df = pd.read_csv(caminho_arquivo, sep=',', encoding='utf-8', encoding_errors='ignore', dtype=str, engine='python')
-        else:
-            df = df_temp
-            
-    except Exception as e:
-        # Se falhou mesmo ignorando erros, a corrupção é grave.
-        return [{"linha": 0, "coluna": "Arquivo", "valor_encontrado": "N/A", "erro": f"ERRO FATAL DE DADOS. O arquivo pode estar corrompido. Detalhe: {str(e)}"}], None
+    for sep, enc in tentativas:
+        try:
+            df_temp = pd.read_csv(caminho_arquivo, sep=sep, encoding=enc, dtype=str, engine='python')
+            if len(df_temp.columns) > 1:
+                df = df_temp
+                break 
+        except Exception as e:
+            erro_leitura = str(e)
+            continue 
 
     if df is None:
-        # Isso só deve acontecer se a leitura falhar completamente após a segunda tentativa
-        return [{"linha": 0, "coluna": "Arquivo", "valor_encontrado": "N/A", "erro": f"ERRO FATAL DE LEITURA. Não foi possível ler o arquivo com vírgula ou ponto e vírgula."}], None
-
+        return [{"linha": 0, "coluna": "Arquivo", "valor_encontrado": "N/A", "erro": f"Erro crítico de leitura. Detalhe: {erro_leitura}"}]
+    
     df = df.fillna('')
-    
+
     # ----------------------------------------------------
-    # 2. PRÉ-PROCESSAMENTO E CORREÇÕES
+    # 2. PRÉ-PROCESSAMENTO E VERIFICAÇÃO DE COLUNAS CRÍTICAS
     # ----------------------------------------------------
     
-    # Colunas que serão verificadas na validação (ajusta conforme seu CSV final)
-    colunas_criticas = ['CGC_CPF', 'TIPPESSOA', 'AD_IDEXTERNO', 'NOMEPARC', 'RAZAOSOCIAL', 'ATIVO', 'CLIENTE', 'FORNECEDOR']
+    colunas_criticas = ['CGC_CPF', 'TIPPESSOA', 'AD_IDEXTERNO', 'NOMEPARC', 'RAZAOSOCIAL']
     for col in colunas_criticas:
         if col not in df.columns:
-            return [{"linha": 0, "coluna": col, "valor_encontrado": "-", "erro": f"Coluna obrigatória '{col}' não encontrada."}], None
+            return [{"linha": 0, "coluna": col, "valor_encontrado": "-", "erro": f"Coluna obrigatória '{col}' não encontrada."}]
 
-    # Verifica colunas opcionais para não quebrar o código
+    # Limpeza
+    df['CGC_CPF_limpo'] = df['CGC_CPF'].str.replace(r'[./-]', '', regex=True).str.strip()
+    df['TIPPESSOA_limpo'] = df['TIPPESSOA'].str.upper().str.strip()
+    
     tem_cep = 'CEP' in df.columns
-    tem_email = 'EMAIL' in df.columns
-    
-    # 2.1 Limpeza de Documentos e Monetário
-    df['CGC_CPF_limpo'] = limpar_documento(df['CGC_CPF'])
-    
-    # Exemplo Monetário: Limpar coluna de limite de crédito (se existir)
-    df = limpar_valor_monetario(df, 'LIMITECREDITO') 
-    
-    # 2.2 Limpeza de Domínios (Sim/Não)
-    for col in ['ATIVO', 'CLIENTE', 'FORNECEDOR']:
-        df[col] = df[col].astype(str).str.upper().str.strip()
-        df[col] = df[col].replace(MAP_SIM_NAO, regex=False)
+    if tem_cep:
+        df['CEP_limpo'] = df['CEP'].str.replace('-', '', regex=True).str.strip()
     
     # ----------------------------------------------------
     # 2.5. VALIDAÇÃO DE DUPLICIDADE (EM LOTE)
@@ -126,55 +110,64 @@ def validar_parceiros(caminho_arquivo):
     # ----------------------------------------------------
     # 3. VALIDAÇÃO DE REGRAS (LINHA A LINHA)
     # ----------------------------------------------------
-    
+    print(f"Iniciando validação de {len(df)} parceiros...")
+
     for index, row in df.iterrows():
         linha_num = index + 2 
         
         def adicionar_erro(coluna, valor, mensagem):
-            erros_encontrados.append({"linha": linha_num, "coluna": coluna, "valor_encontrado": str(valor), "erro": mensagem})
+            erros_encontrados.append({
+                "linha": linha_num,
+                "coluna": coluna,
+                "valor_encontrado": str(valor),
+                "erro": mensagem
+            })
 
-        # --- Regras do "Leia-me" (TGFPAR) ---
+        # [Obrigatório] AD_IDEXTERNO
+        if not row['AD_IDEXTERNO']:
+            adicionar_erro('AD_IDEXTERNO', row['AD_IDEXTERNO'], "Campo obrigatório está vazio.")
         
-        # [Obrigatório]
-        if not row['AD_IDEXTERNO']: adicionar_erro('AD_IDEXTERNO', row['AD_IDEXTERNO'], "Campo obrigatório está vazio.")
-        if not row['NOMEPARC']: adicionar_erro('NOMEPARC', row['NOMEPARC'], "Campo obrigatório (Nome do Parceiro) está vazio.")
+        # [Obrigatório] NOMEPARC
+        if not row['NOMEPARC']:
+            adicionar_erro('NOMEPARC', row['NOMEPARC'], "Campo obrigatório (Nome do Parceiro) está vazio.")
         
         # [Domínio] TIPPESSOA
         tipo_pessoa = row['TIPPESSOA_limpo']
-        if not tipo_pessoa: adicionar_erro('TIPPESSOA', row['TIPPESSOA'], "Campo obrigatório (Tipo de Pessoa) está vazio.")
-        elif tipo_pessoa not in ('F', 'J'): adicionar_erro('TIPPESSOA', row['TIPPESSOA'], "Valor inválido. Permitido apenas 'F' ou 'J'.")
-
-        # [Obrigatório] ATIVO, CLIENTE, FORNECEDOR
-        for col_dom in ['ATIVO', 'CLIENTE', 'FORNECEDOR']:
-            if row[col_dom] not in ('S', 'N'):
-                adicionar_erro(col_dom, row[col_dom], "Valor inválido. Esperado 'S' ou 'N' após a correção automática.")
+        if not tipo_pessoa:
+            adicionar_erro('TIPPESSOA', row['TIPPESSOA'], "Campo obrigatório (Tipo de Pessoa) está vazio.")
+        elif tipo_pessoa not in ('F', 'J'):
+            adicionar_erro('TIPPESSOA', row['TIPPESSOA'], "Valor inválido. Permitido apenas 'F' ou 'J'.")
 
         # --- VALIDAÇÃO CONDICIONAL (CPF/CNPJ) ---
         documento = row['CGC_CPF_limpo']
-        if not documento: adicionar_erro('CGC_CPF', row['CGC_CPF'], "Campo obrigatório (CNPJ/CPF) está vazio.")
+        
+        if not documento:
+            adicionar_erro('CGC_CPF', row['CGC_CPF'], "Campo obrigatório (CNPJ/CPF) está vazio.")
+        
         elif tipo_pessoa == 'F':
-            if len(documento) != 11: adicionar_erro('CGC_CPF', row['CGC_CPF'], f"Tipo Pessoa 'F', mas documento tem {len(documento)} dígitos (esperado 11).")
-            elif not validar_cpf(documento): adicionar_erro('CGC_CPF', row['CGC_CPF'], "Tipo Pessoa 'F', mas o CPF é inválido (dígito verificador não confere).")
+            if len(documento) != 11:
+                adicionar_erro('CGC_CPF', row['CGC_CPF'], f"Tipo Pessoa 'F', mas documento tem {len(documento)} dígitos (esperado 11).")
+            elif not validar_cpf(documento):
+                adicionar_erro('CGC_CPF', row['CGC_CPF'], "Tipo Pessoa 'F', mas o CPF é inválido (dígito verificador não confere).")
+                    
         elif tipo_pessoa == 'J':
-            if len(documento) != 14: adicionar_erro('CGC_CPF', row['CGC_CPF'], f"Tipo Pessoa 'J', mas documento tem {len(documento)} dígitos (esperado 14).")
-            elif not validar_cnpj(documento): adicionar_erro('CGC_CPF', row['CGC_CPF'], "Tipo Pessoa 'J', mas o CNPJ é inválido (dígito verificador não confere).")
+            if len(documento) != 14:
+                adicionar_erro('CGC_CPF', row['CGC_CPF'], f"Tipo Pessoa 'J', mas documento tem {len(documento)} dígitos (esperado 14).")
+            elif not validar_cnpj(documento):
+                adicionar_erro('CGC_CPF', row['CGC_CPF'], "Tipo Pessoa 'J', mas o CNPJ é inválido (dígito verificador não confere).")
 
         # [Regra de Negócio] Razão Social vs Nome (para PF)
         if tipo_pessoa == 'F' and row['NOMEPARC'] != row['RAZAOSOCIAL']:
              adicionar_erro('RAZAOSOCIAL', row['RAZAOSOCIAL'], "Para Pessoa Física, a Razão Social deve ser IDÊNTICA ao Nome do Parceiro.")
              
-        # [Formato] CEP
-        if tem_cep:
-            cep_limpo = row['CEP_limpo']
-            if not cep_limpo: adicionar_erro('CEP', row['CEP'], "Campo obrigatório (CEP) está vazio.")
-            elif not cep_limpo.isdigit() or len(cep_limpo) != 8: adicionar_erro('CEP', row['CEP'], "Formato inválido. CEP deve ter 8 dígitos numéricos.")
-
-   # ... (no final da função validar_parceiros) ...
+    print(f"Validação concluída. Total de erros encontrados: {len(erros_encontrados)}")
     
-    # Retorna o DF com as correções e a lista de erros
+    # Retorna a lista de erros (removendo duplicatas exatas se houver)
     if erros_encontrados:
         df_erros = pd.DataFrame(erros_encontrados)
-        return df_erros.drop_duplicates().to_dict('records'), df
+        return df_erros.drop_duplicates().to_dict('records')
     
-    # Se não houver erros, retorna lista vazia e o DF
-    return [], df
+    return []
+
+# --- Bloco de Execução Principal (NÃO USADO QUANDO IMPORTADO PELO APP.PY) ---
+# ... (restante do código não alterado) ...

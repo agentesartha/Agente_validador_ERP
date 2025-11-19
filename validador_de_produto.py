@@ -53,14 +53,10 @@ def mapear_colunas(df, mapeamento):
 # --- Função Principal de Validação ---
 
 def validar_produtos(caminho_arquivo):
-    """
-    Valida e corrige planilha de produtos.
-    Retorna: (lista_erros, dataframe_corrigido)
-    """
     erros_encontrados = []
     
     # ----------------------------------------------------
-    # 1. CARREGAR OS DADOS
+    # 1. CARREGAR OS DADOS (Leitura Robusta)
     # ----------------------------------------------------
     df = None
     erro_leitura = "Formato desconhecido"
@@ -82,7 +78,7 @@ def validar_produtos(caminho_arquivo):
     df = df.fillna('')
 
     # ----------------------------------------------------
-    # 2. MAPEAR E VERIFICAR COLUNAS CRÍTICAS
+    # 2. PRÉ-PROCESSAMENTO E CORREÇÕES
     # ----------------------------------------------------
     
     # 2.1 Limpeza de Cabeçalhos (Para evitar KeyErrors por espaço/caixa)
@@ -97,59 +93,48 @@ def validar_produtos(caminho_arquivo):
             return [{"linha": 0, "coluna": col, "valor_encontrado": "-", 
                      "erro": f"Coluna obrigatória '{col}' não encontrada. (Alternativas: {alternativas})."}], None
     
-    # ----------------------------------------------------
-    # 3. APLICAR CORREÇÕES AUTOMÁTICAS
-    # ----------------------------------------------------
-    
     # Backup de colunas originais
-    colunas_para_backup = ['NCM', 'UNIDADE']
-    colunas_monetarias = ['PRECO_VENDA', 'PRECO_CUSTO']
+    colunas_para_backup = ['NCM', 'UNIDADE', 'PRECO_VENDA', 'PRECO_CUSTO', 'USOPROD']
     colunas_sim_nao = ['TEMIPICOMPRA', 'TEMIPIVENDA', 'USACODBARRASQTD', 'ATIVO']
-
-    # Adiciona colunas monetárias e sim/não existentes para backup
-    for col in colunas_monetarias + colunas_sim_nao:
-         if col in df.columns: colunas_para_backup.append(col)
+    for col in colunas_para_backup + colunas_sim_nao:
+        if col in df.columns: df[f'{col}_original'] = df[col].copy()
     
-    for col in colunas_para_backup:
-        if col in df.columns:
-            df[f'{col}_original'] = df[col].copy()
-    
-    # CORREÇÃO 1: Limpar NCM (remover pontos, traços)
-    df['NCM'] = df['NCM'].astype(str).str.replace(r'[./-\s]', '', regex=True).str.strip()
+    # CORREÇÃO 1: Limpar NCM (Solução anti-RegEx)
+    df['NCM'] = df['NCM'].astype(str).str.replace('.', '', regex=False)\
+                         .str.replace('/', '', regex=False)\
+                         .str.replace('-', '', regex=False)\
+                         .str.replace(' ', '', regex=False)\
+                         .str.strip()
     
     # CORREÇÃO 2: Padronizar UNIDADE e tratar por extenso
     df['UNIDADE'] = df['UNIDADE'].str.upper().str.strip()
     df['UNIDADE'] = df['UNIDADE'].replace(MAP_UNIDADES, regex=False)
     
     # CORREÇÃO 3: Limpar valores monetários
-    for col in colunas_monetarias:
-        df = limpar_valor_monetario(df, col)
+    df = limpar_valor_monetario(df, 'PRECO_VENDA')
+    df = limpar_valor_monetario(df, 'PRECO_CUSTO')
     
     # CORREÇÃO 4: Padronizar campos Sim/Não
     for col in colunas_sim_nao:
         if col in df.columns:
             df[col] = df[col].astype(str).str.upper().str.strip()
             df[col] = df[col].replace(MAP_SIM_NAO, regex=False)
-    
+            
     # CORREÇÃO 5: Padronizar USOPROD
     if 'USOPROD' in df.columns:
-        df['USOPROD_original'] = df['USOPROD'].copy()
         df['USOPROD'] = df['USOPROD'].str.upper().str.strip()
-    
+
     # ----------------------------------------------------
-    # 4. VALIDAÇÃO LINHA A LINHA
+    # 3. VALIDAÇÃO LINHA A LINHA
     # ----------------------------------------------------
     
-    print(f"Iniciando validação de {len(df)} produtos...")
-    
-    # [Omissão do loop for/validação por brevidade]
+    # [Omissão do loop de validação por brevidade]
     
     # Retorna erros e DataFrame corrigido
     # ... (lógica de retorno) ...
     
     # Retorna erros e DataFrame corrigido
     if erros_encontrados:
-        # Simplificado para evitar quebra de código no retorno
         df_erros = pd.DataFrame(erros_encontrados)
         return df_erros.drop_duplicates().to_dict('records'), df
     

@@ -10,7 +10,7 @@ from validador_de_estoque import validar_estoque
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(
     page_title="Validador ERP",
-    page_icon="favicon.png", # Usa o arquivo favicon.png
+    page_icon="favicon.png", 
     layout="wide"
 )
 
@@ -27,9 +27,8 @@ if 'pagina_atual' not in st.session_state:
 def set_pagina(nome_pagina):
     st.session_state['pagina_atual'] = nome_pagina
 
-# --- FUNÇÃO DE RELATÓRIO (COMPLETA COM OS DOIS BOTÕES) ---
-# AGORA RECEBE 'erros' E 'df_corrigido'
-def exibir_relatorio_erros(erros, df_corrigido):
+# --- FUNÇÃO DE RELATÓRIO ---
+def exibir_relatorio_erros(erros, df_corrigido): # Recebe os 2 argumentos
     if erros is None:
         st.error("❌ A validação falhou e não pôde ser concluída. (Erro de Leitura Crítico)")
     elif not erros:
@@ -47,7 +46,7 @@ def exibir_relatorio_erros(erros, df_corrigido):
         )
         
     else:
-        # Se houver erros, exibe a tabela de erros E os dois botões
+        # Se houver erros, exibe a tabela de erros E o botão de planilha corrigida
 
         st.error(f"❌ Foram encontrados {len(erros)} erros.") 
         
@@ -90,21 +89,6 @@ def exibir_relatorio_erros(erros, df_corrigido):
                 "erro": "Descrição do Erro"
             }
         )
-        
-# --- Mude a Chamada da Validação (Bloco Parceiros) ---
-# Você precisa mudar a chamada na função 'app.py' para desestruturar os dois resultados:
-
-# No bloco 'elif st.session_state['pagina_atual'] == 'parceiros':', a chamada deve ser:
-# ANTES: erros = validar_parceiros(TEMP_PARCEIRO)
-# DEPOIS:
-#
-# resultados = validar_parceiros(TEMP_PARCEIRO)
-# if resultados is None:
-#     erros, df_corrigido = None, None
-# else:
-#     erros, df_corrigido = resultados # Recebe a lista de erros E o DF
-#
-# exibir_relatorio_erros(erros, df_corrigido)
 
 # --- CABEÇALHO E LOGO ---
 # Usamos [1, 4, 1] para balancear a logo e centralizar visualmente o texto
@@ -160,9 +144,17 @@ elif st.session_state['pagina_atual'] == 'parceiros':
             f.write(arquivo_upado.getbuffer())
         
         with st.spinner("Analisando regras de negócio..."):
-            erros = validar_parceiros(TEMP_PARCEIRO)
+            # AQUI: Chamada que recebe ERROS E O DATAFRAME CORRIGIDO
+            resultados = validar_parceiros(TEMP_PARCEIRO)
         
-        exibir_relatorio_erros(erros)
+        if resultados is None:
+            erros, df_corrigido = None, None
+        else:
+            erros, df_corrigido = resultados # Recebe a lista de erros E o DF
+
+        # CORREÇÃO: Passa os DOIS argumentos para a função
+        exibir_relatorio_erros(erros, df_corrigido) 
+        
         if os.path.exists(TEMP_PARCEIRO): os.remove(TEMP_PARCEIRO)
 
 # 3. Tela Produtos (ELIF)
@@ -177,9 +169,17 @@ elif st.session_state['pagina_atual'] == 'produtos':
             f.write(arquivo_upado.getbuffer())
             
         with st.spinner("Analisando NCMs, unidades e regras..."):
-            erros = validar_produtos(TEMP_PRODUTO)
+            # AQUI: Chamada que recebe ERROS E O DATAFRAME CORRIGIDO
+            resultados = validar_produtos(TEMP_PRODUTO)
+
+        if resultados is None:
+            erros, df_corrigido = None, None
+        else:
+            erros, df_corrigido = resultados # Recebe a lista de erros E o DF
             
-        exibir_relatorio_erros(erros)
+        # CORREÇÃO: Passa os DOIS argumentos para a função
+        exibir_relatorio_erros(erros, df_corrigido) 
+        
         if os.path.exists(TEMP_PRODUTO): os.remove(TEMP_PRODUTO)
 
 # 4. Tela Estoque (ELIF)
@@ -201,9 +201,16 @@ elif st.session_state['pagina_atual'] == 'estoque':
         with open(TEMP_MESTRE_PRODUTO, "wb") as f: f.write(arquivo_mestre.getbuffer())
         
         with st.spinner("Cruzando dados com o mestre..."):
-            erros = validar_estoque(TEMP_ESTOQUE)
+            # AQUI: Chamada que recebe ERROS E O DATAFRAME CORRIGIDO
+            resultados = validar_estoque(TEMP_ESTOQUE)
+
+        if resultados is None:
+            erros, df_corrigido = None, None
+        else:
+            erros, df_corrigido = resultados # Recebe a lista de erros E o DF
             
-        exibir_relatorio_erros(erros)
+        # CORREÇÃO: Passa os DOIS argumentos para a função
+        exibir_relatorio_erros(erros, df_corrigido) 
         
         if os.path.exists(TEMP_ESTOQUE): os.remove(TEMP_ESTOQUE)
         if os.path.exists(TEMP_MESTRE_PRODUTO): os.remove(TEMP_MESTRE_PRODUTO)

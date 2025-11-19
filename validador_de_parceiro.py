@@ -31,7 +31,6 @@ def limpar_documento(doc_series):
     """Remove pontuação de CPF/CNPJ para validação."""
     return doc_series.astype(str).str.replace(r'[./-]', '', regex=True).str.strip()
 
-
 def validar_parceiros(caminho_arquivo):
     erros_encontrados = []
     
@@ -50,18 +49,27 @@ def validar_parceiros(caminho_arquivo):
     df = df.fillna('')
 
     # ----------------------------------------------------
-    # 2. PRÉ-PROCESSAMENTO (SÓ LIMPEZA ESSENCIAL PARA VALIDAÇÃO)
+    # 2. PRÉ-PROCESSAMENTO (CORREÇÃO DE HEADERS E CRIAÇÃO DE COLUNAS LIMPAS)
     # ----------------------------------------------------
+    
+    # 2.1 Limpeza de Cabeçalhos (Resolve KeyErrors por espaço/caixa)
+    df.columns = df.columns.str.upper().str.strip() 
+
     colunas_criticas = ['CGC_CPF', 'TIPPESSOA', 'AD_IDEXTERNO', 'NOMEPARC', 'RAZAOSOCIAL', 'ATIVO', 'CLIENTE', 'FORNECEDOR']
     for col in colunas_criticas:
         if col not in df.columns:
             return [{"linha": 0, "coluna": col, "valor_encontrado": "-", "erro": f"Coluna obrigatória '{col}' não encontrada no cabeçalho do arquivo."}], None
 
+    # Verifica colunas opcionais
     tem_cep = 'CEP' in df.columns
     
-    # Limpeza de Documentos e Padronização de Caixa
+    # 2.2 Criação das Colunas Limpas (FORA DO LOOP)
     df['CGC_CPF_limpo'] = limpar_documento(df['CGC_CPF'])
     df['TIPPESSOA_limpo'] = df['TIPPESSOA'].astype(str).str.upper().str.strip()
+    
+    # CORREÇÃO DA FALHA: Limpeza do CEP no pré-processamento (Resolve AttributeError)
+    if tem_cep:
+        df['CEP_limpo'] = df['CEP'].astype(str).str.replace(r'[^0-9]', '', regex=True).str.strip()
     
     # ----------------------------------------------------
     # 3. VALIDAÇÃO DE REGRAS (LINHA A LINHA)
@@ -83,7 +91,7 @@ def validar_parceiros(caminho_arquivo):
         if not tipo_pessoa: adicionar_erro('TIPPESSOA', row['TIPPESSOA'], "Campo obrigatório (Tipo de Pessoa) está vazio.")
         elif tipo_pessoa not in ('F', 'J'): adicionar_erro('TIPPESSOA', row['TIPPESSOA'], "Valor inválido. Permitido apenas 'F' ou 'J'.")
 
-        # [Obrigatório] ATIVO, CLIENTE, FORNECEDOR (Valida valor original sem correção)
+        # [Obrigatório] ATIVO, CLIENTE, FORNECEDOR
         for col_dom in ['ATIVO', 'CLIENTE', 'FORNECEDOR']:
             if row[col_dom].upper() not in ('S', 'N'): adicionar_erro(col_dom, row[col_dom], "Valor inválido. Esperado 'S' ou 'N'.")
 
@@ -103,12 +111,13 @@ def validar_parceiros(caminho_arquivo):
              
         # [Formato] CEP
         if tem_cep:
-            cep_limpo = row['CEP'].astype(str).str.replace(r'[^0-9]', '', regex=True).str.strip()
+            cep_limpo = row['CEP_limpo'] # USA A COLUNA JÁ LIMPA
             if not cep_limpo: adicionar_erro('CEP', row['CEP'], "Campo obrigatório (CEP) está vazio.")
             elif not cep_limpo.isdigit() or len(cep_limpo) != 8: adicionar_erro('CEP', row['CEP'], "Formato inválido. CEP deve ter 8 dígitos numéricos.")
 
-    # Retorna APENAS erros e o DF para manter a função de chamada compatível
+    # Retorna APENAS erros e o DF
     if erros_encontrados:
         df_erros = pd.DataFrame(erros_encontrados)
         return df_erros.drop_duplicates().to_dict('records'), df
+    
     return [], df

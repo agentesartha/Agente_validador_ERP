@@ -27,79 +27,65 @@ if 'pagina_atual' not in st.session_state:
 def set_pagina(nome_pagina):
     st.session_state['pagina_atual'] = nome_pagina
 
-# --- FUNÇÃO DE RELATÓRIO MELHORADA ---
-def exibir_relatorio_erros(erros, df_corrigido=None, nome_arquivo_corrigido="planilha_corrigida.csv"):
-    if erros is None:
-        st.error("❌ A validação falhou e não pôde ser concluída.")
+# --- FUNÇÃO DE RELATÓRIO (REMOVIDO OS BALÕES) ---
+def exibir_relatorio_erros(erros, df_corrigido): 
+    
+    # 1. TRATAMENTO DE ERRO CRÍTICO (Quando o DF corrigido é None)
+    if erros is None or df_corrigido is None:
+        st.error("❌ A validação falhou e não pôde ser concluída. Motivo: Coluna obrigatória faltando, erro na leitura ou arquivo corrompido.")
+        
+        if erros is not None and isinstance(erros, list):
+             df_erros = pd.DataFrame(erros)
+             st.subheader("Detalhes do Erro Crítico:")
+             st.dataframe(df_erros, use_container_width=True, hide_index=True)
+        return
+
+    # 2. Caso de Sucesso
     elif not erros:
         st.success("✅ SUCESSO! Nenhum erro encontrado. Planilha pronta para importação.")
-        st.balloons() 
+        # Linha st.balloons() removida
+        
+    # 3. Caso de Erros Encontrados (e o DF está OK para download)
     else:
-        # Separa erros por tipo
-        erros_corrigiveis = [e for e in erros if e.get('corrigido', False)]
-        erros_manuais = [e for e in erros if not e.get('corrigido', False)]
+        st.error(f"❌ Foram encontrados {len(erros)} erros.") 
         
-        # Estatísticas
-        total_erros = len(erros)
-        total_corrigidos = len(erros_corrigiveis)
-        total_manuais = len(erros_manuais)
+        # 1. Botões de Download (Em duas colunas)
+        col_err, col_corr = st.columns(2)
         
-        # Exibe resumo
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Total de Erros", total_erros)
-        with col2:
-            st.metric("✅ Corrigidos Auto.", total_corrigidos)
-        with col3:
-            st.metric("⚠️ Requerem Atenção", total_manuais)
-        
-        # Mensagem de status
-        if total_manuais > 0:
-            st.warning(f"⚠️ {total_manuais} erro(s) requerem correção manual.")
-        
-        if total_corrigidos > 0:
-            st.info(f"✨ {total_corrigidos} erro(s) foram corrigidos automaticamente!")
-        
-        # Botões de download
-        col_btn1, col_btn2 = st.columns(2)
-        
-        with col_btn1:
-            # Relatório de erros
+        # Botão 1: Relatório de Erros
+        with col_err:
             df_erros = pd.DataFrame(erros)
             csv_erros = df_erros.to_csv(index=False, sep=';', encoding='utf-8')
             st.download_button(
-                label="📄 BAIXAR RELATÓRIO DE ERROS",
+                label="⬇️ BAIXAR RELATÓRIO DE ERROS",
                 data=csv_erros,
                 file_name='relatorio_erros_validacao.csv',
                 mime='text/csv',
                 type="secondary"
             )
         
-        with col_btn2:
-            # Planilha corrigida (se disponível)
-            if df_corrigido is not None:
-                csv_corrigido = df_corrigido.to_csv(index=False, sep=';', encoding='utf-8')
-                st.download_button(
-                    label="✅ BAIXAR PLANILHA CORRIGIDA",
-                    data=csv_corrigido,
-                    file_name=nome_arquivo_corrigido,
-                    mime='text/csv',
-                    type="primary"
-                )
+        # Botão 2: Planilha Corrigida
+        with col_corr:
+            csv_corrigido = df_corrigido.to_csv(index=False, sep=';', encoding='utf-8')
+            st.download_button(
+                label="⬇️ BAIXAR PLANILHA CORRIGIDA",
+                data=csv_corrigido,
+                file_name='planilha_corrigida_com_erros.csv',
+                mime='text/csv',
+                type="primary"
+            )
 
-        # Tabela de erros
-        st.subheader("Detalhamento dos Erros")
+        # 2. Exibe a tabela de erros
+        df_erros = pd.DataFrame(erros)
         st.dataframe(
             df_erros, 
             use_container_width=True,
             hide_index=True,
             column_config={
                 "linha": st.column_config.NumberColumn("Linha", format="%d"),
-                "coluna": "Coluna",
-                "valor_encontrado": "Valor Original",
-                "valor_corrigido": "Valor Corrigido",
-                "erro": "Descrição",
-                "corrigido": st.column_config.CheckboxColumn("Auto-Corrigido")
+                "coluna": "Nome da Coluna",
+                "valor_encontrado": "Valor Inválido",
+                "erro": "Descrição do Erro"
             }
         )
 

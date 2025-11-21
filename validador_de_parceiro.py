@@ -2,7 +2,7 @@ import pandas as pd
 import re
 import sys
 # Importa os mapas de pesquisa (assumindo que o arquivo modulos_mestre.py foi criado)
-from .modulos_mestre import MAP_CIDADE_CODIGO, MAP_UF_CODIGO 
+from modulos_mestre import MAP_CIDADE_CODIGO, MAP_UF_CODIGO 
 
 # --- Funções Auxiliares de Limpeza ---
 MAP_SIM_NAO = {'SIM': 'S', 'S': 'S', 'NÃO': 'N', 'NAO': 'N', 'N': 'N', 'YES': 'S', 'NO': 'N'}

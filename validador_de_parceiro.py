@@ -39,14 +39,19 @@ MAPEAMENTO_COLUNAS = {
     'COD_EMPRESA_PREF': ['CODEMPPREF'],
 }
 
+# --- Mapeamento de Colunas (Com Limpeza Agressiva) ---
+
 def mapear_colunas(df, mapeamento):
-    """Renomeia colunas do DF para os nomes oficiais do script."""
+    """Renomeia colunas do DF para os nomes oficiais do script, com limpeza agressiva."""
     colunas_encontradas = {}
-    df.columns = df.columns.str.upper().str.strip() 
+    
+    # 🚨 LIMPEZA EXTREMA: Remove qualquer caractere que não seja letra, número ou underline.
+    # Ex: 'COD_SIST_ANTERIOR\xa0' -> 'COD_SIST_ANTERIOR'
+    df.columns = df.columns.str.replace(r'[^A-Z0-9_]', '', regex=True).str.upper().str.strip() 
     
     for nome_oficial, alternativas in mapeamento.items():
         for alt in alternativas:
-            alt_upper = alt.upper()
+            alt_upper = alt.upper().replace(' ', '_') # Padroniza o alvo
             if alt_upper in df.columns:
                 colunas_encontradas[alt_upper] = nome_oficial
                 break 

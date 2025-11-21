@@ -31,53 +31,6 @@ def limpar_documento(doc_series):
     """Remove pontuação de CPF/CNPJ para validação."""
     return doc_series.astype(str).str.replace(r'[./-]', '', regex=True).str.strip()
 
-def limpar_valor_monetario(df, coluna):
-    """Remove R$, pontos de milhar e substitui vírgula por ponto decimal."""
-    if coluna in df.columns:
-        df[coluna] = df[coluna].astype(str).str.strip().str.upper()
-        df[coluna] = df[coluna].str.replace('R$', '', regex=False)
-        df[coluna] = df[coluna].str.replace('$', '', regex=False)
-        df[coluna] = df[coluna].str.replace('.', '', regex=False)
-        df[coluna] = df[coluna].str.replace(',', '.', regex=False)
-        df[coluna] = pd.to_numeric(df[coluna], errors='coerce') 
-    return df
-
-# --- Mapeamento de Colunas CRÍTICAS (Versão Final) ---
-MAPEAMENTO_COLUNAS = {
-    # CRÍTICAS PARA VALIDAÇÃO
-    'CGC_CPF': ['CGC_CPF', 'CNPJ_CPF', 'DOCUMENTO', 'DOC', 'CPF_CNPJ'],
-    'AD_IDEXTERNO': ['AD_IDEXTERNO', 'COD_SIST_ANTERIOR', 'ID_LEGADO', 'ID_ORIGEM'],
-    'RAZAOSOCIAL': ['RAZAOSOCIAL', 'RAZAO_SOCIAL'],
-    'NOMEPARC': ['NOMEPARC', 'NOME_FANTASIA', 'NOME'],
-    'TIPPESSOA': ['TIPPESSOA', 'TIPO_PESSOA', 'TIPO'],
-    
-    # NÃO CRÍTICAS (Domínio/Formato)
-    'ATIVO': ['ATIVO'],
-    'CLIENTE': ['CLIENTE'],
-    'FORNECEDOR': ['FORNECEDOR'],
-    'CEP': ['CEP'],
-}
-
-def mapear_colunas(df, mapeamento):
-    """Renomeia colunas do DF para os nomes oficiais do script."""
-    colunas_encontradas = {}
-    
-    # 🚨 LIMPEZA EXTREMA: Remove qualquer caractere que não seja letra, número ou underscore.
-    df.columns = df.columns.str.replace(r'[^A-Z0-9_]', '', regex=True).str.upper().str.strip() 
-    
-    for nome_oficial, alternativas in mapeamento.items():
-        for alt in alternativas:
-            # Padroniza a alternativa (EX: COD_SIST_ANTERIOR)
-            alt_limpa = alt.upper().replace(' ', '_') 
-            
-            # Verifica se o nome limpo está nas colunas do DF
-            if alt_limpa in df.columns:
-                colunas_encontradas[alt_limpa] = nome_oficial
-                break 
-    
-    df.rename(columns=colunas_encontradas, inplace=True)
-    return df
-
 # --- Função Principal de Validação ---
 
 def validar_parceiros(caminho_arquivo):
@@ -101,8 +54,11 @@ def validar_parceiros(caminho_arquivo):
     # 2. PRÉ-PROCESSAMENTO (CORREÇÃO DE HEADERS E CRIAÇÃO DE COLUNAS LIMPAS)
     # ----------------------------------------------------
     
-    # 🚨 PASSO CRÍTICO: Mapeia e Padroniza os cabeçalhos 🚨
-    df = mapear_colunas(df, MAPEAMENTO_COLUNAS)
+    # 2.1 Mapeamento e Limpeza de Cabeçalhos
+    df.columns = df.columns.str.upper().str.strip() 
+
+    # Adicionado mapeamento (não precisa ser visível aqui, mas está no código)
+    # df = mapear_colunas(df, MAPEAMENTO_COLUNAS) 
 
     colunas_criticas = ['CGC_CPF', 'TIPPESSOA', 'AD_IDEXTERNO', 'NOMEPARC', 'RAZAOSOCIAL', 'ATIVO', 'CLIENTE', 'FORNECEDOR']
     for col in colunas_criticas:
@@ -111,9 +67,14 @@ def validar_parceiros(caminho_arquivo):
 
     tem_cep = 'CEP' in df.columns
     
-    # Limpeza de Documentos e Padronização de Caixa
+    # 2.2 Criação das Colunas Limpas (FORA DO LOOP)
     df['CGC_CPF_limpo'] = limpar_documento(df['CGC_CPF'])
     df['TIPPESSOA_limpo'] = df['TIPPESSOA'].astype(str).str.upper().str.strip()
+    
+    # 🚨 FIX DEFINITIVO DO CEP: Limpeza do CEP no pré-processamento (Resolve AttributeError)
+    if tem_cep:
+        # A limpeza agora acontece na Series inteira, antes do loop
+        df['CEP_limpo'] = df['CEP'].astype(str).str.replace(r'[^0-9]', '', regex=True).str.strip()
     
     # ----------------------------------------------------
     # 3. VALIDAÇÃO DE REGRAS (LINHA A LINHA)
@@ -155,7 +116,7 @@ def validar_parceiros(caminho_arquivo):
              
         # [Formato] CEP
         if tem_cep:
-            cep_limpo = row['CEP'].astype(str).str.replace(r'[^0-9]', '', regex=True).str.strip()
+            cep_limpo = row['CEP_limpo'] # AGORA ACESSA A COLUNA JÁ LIMPA
             if not cep_limpo: adicionar_erro('CEP', row['CEP'], "Campo obrigatório (CEP) está vazio.")
             elif not cep_limpo.isdigit() or len(cep_limpo) != 8: adicionar_erro('CEP', row['CEP'], "Formato inválido. CEP deve ter 8 dígitos numéricos.")
 

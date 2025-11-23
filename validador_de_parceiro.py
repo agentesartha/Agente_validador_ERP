@@ -1,17 +1,55 @@
 import pandas as pd
 import re
 import sys
-import os 
-from datetime import datetime
 
-# --- Mapeamento de Correções e Funções Auxiliares ---
+# --- Funções Auxiliares (Limpeza) ---
 MAP_SIM_NAO = {'SIM': 'S', 'S': 'S', 'NÃO': 'N', 'NAO': 'N', 'N': 'N', 'YES': 'S', 'NO': 'N', '1': 'S', '0': 'N'}
 
 def limpar_documento(doc_series):
     """Remove pontuação de CPF/CNPJ para validação."""
     return doc_series.astype(str).str.replace(r'[./-]', '', regex=True).str.strip()
+
+def limpar_valor_monetario(df, coluna):
+    """Remove R$, pontos de milhar e substitui vírgula por ponto decimal."""
+    if coluna in df.columns:
+        df[coluna] = df[coluna].astype(str).str.strip().str.upper()
+        df[coluna] = df[coluna].str.replace('R$', '', regex=False)
+        df[coluna] = df[coluna].str.replace('$', '', regex=False)
+        df[coluna] = df[coluna].str.replace('.', '', regex=False)
+        df[coluna] = df[coluna].str.replace(',', '.', regex=False)
+        df[coluna] = pd.to_numeric(df[coluna], errors='coerce') 
+    return df
+
+# --- Mapeamento de Colunas CRÍTICAS (Final) ---
+MAPEAMENTO_COLUNAS = {
+    'CGC_CPF': ['CGC_CPF', 'CNPJ_CPF', 'DOCUMENTO', 'DOC', 'CPF_CNPJ', 'CNPJ_E_CPF'],
+    'AD_IDEXTERNO': ['AD_IDEXTERNO', 'COD_SIST_ANTERIOR', 'ID_LEGADO', 'ID_ORIGEM'],
+    'RAZAOSOCIAL': ['RAZAOSOCIAL', 'RAZAO_SOCIAL'],
+    'NOMEPARC': ['NOMEPARC', 'NOME_FANTASIA', 'NOME'],
+    'TIPPESSOA': ['TIPPESSOA', 'TIPO_PESSOA', 'TIPO'],
+    'ATIVO': ['ATIVO'], 'CLIENTE': ['CLIENTE'], 'FORNECEDOR': ['FORNECEDOR'],
+    'CEP': ['CEP'],
+}
+
+def mapear_colunas(df, mapeamento):
+    """Renomeia colunas do DF para os nomes oficiais do script."""
+    colunas_encontradas = {}
     
-# [Funções de Validação CPF/CNPJ omitidas por brevidade, mas devem estar no seu arquivo]
+    # 🚨 LIMPEZA EXTREMA: Remove qualquer caractere que não seja letra, número ou underscore.
+    df.columns = df.columns.astype(str).str.replace(r'[^A-Z0-9_]', '', regex=True).str.upper().str.strip() 
+    
+    for nome_oficial, alternativas in mapeamento.items():
+        for alt in alternativas:
+            alt_limpa = alt.upper().replace(' ', '_') 
+            
+            if alt_limpa in df.columns:
+                colunas_encontradas[alt_limpa] = nome_oficial
+                break 
+    
+    df.rename(columns=colunas_encontradas, inplace=True)
+    return df
+
+# --- Funções de Validação (CPF/CNPJ) ---
 def _calcular_digito_cpf(cpf_parcial):
     soma = 0; fator = len(cpf_parcial) + 1
     for digito in cpf_parcial: soma += int(digito) * fator; fator -= 1
@@ -36,88 +74,109 @@ def validar_cnpj(cnpj):
     cnpj_parcial += str(digito1); digito2 = _calcular_digito_cnpj(cnpj_parcial)
     return cnpj == f"{cnpj[:12]}{digito1}{digito2}"
 
-# --- Mapeamento de Colunas CRÍTICAS (Final) ---
-MAPEAMENTO_COLUNAS = {
-    'CGC_CPF': ['CGC_CPF', 'CNPJ_CPF', 'DOCUMENTO', 'DOC', 'CPF_CNPJ', 'CNPJ_E_CPF'],
-    'AD_IDEXTERNO': ['AD_IDEXTERNO', 'COD_SIST_ANTERIOR', 'ID_LEGADO', 'ID_ORIGEM'],
-    'RAZAOSOCIAL': ['RAZAOSOCIAL', 'RAZAO_SOCIAL'],
-    'NOMEPARC': ['NOMEPARC', 'NOME_FANTASIA', 'NOME'],
-    'TIPPESSOA': ['TIPPESSOA', 'TIPO_PESSOA', 'TIPO'],
-    'ATIVO': ['ATIVO'], 'CLIENTE': ['CLIENTE'], 'FORNECEDOR': ['FORNECEDOR'],
-    'CEP': ['CEP'],
-}
-
-# --- FUNÇÕES DE CARREGAMENTO MESTRE (FUSÃO DO modulos_mestre.py) ---
-
-# Variáveis globais para armazenar os mapas de pesquisa
-MAP_CIDADE_CODIGO = {}
-MAP_UF_CODIGO = {}
-
-def carregar_dados_mestre():
-    """Carrega os dados de Cidade e UF e cria os dicionários de mapeamento."""
-    global MAP_CIDADE_CODIGO
-    global MAP_UF_CODIGO
-
-    base_path = os.path.dirname(os.path.abspath(__file__)) 
-
-    ARQUIVO_CIDADE_1 = "CIDADE DE 0 A 4999.xls - new sheet.csv"
-    ARQUIVO_CIDADE_2 = "CIDADE DE 5000 A 5572.xls - new sheet.csv"
-    ARQUIVO_UF = "UF ESTADOS.xls - new sheet.csv"
-
-    # --- 1. CARREGAR DADOS DE CIDADES ---
-    try:
-        df_cid1 = pd.read_csv(os.path.join(base_path, ARQUIVO_CIDADE_1), sep=';', encoding='latin-1', dtype=str, on_bad_lines='skip')
-        df_cid2 = pd.read_csv(os.path.join(base_path, ARQUIVO_CIDADE_2), sep=';', encoding='latin-1', dtype=str, on_bad_lines='skip')
-        
-        df_cidades = pd.concat([df_cid1, df_cid2], ignore_index=True)
-        df_cidades.columns = df_cidades.columns.str.upper().str.strip()
-        
-        MAP_CIDADE_CODIGO = df_cidades.set_index('NOMECID')['CODCID'].apply(str).to_dict()
-
-    except Exception as e:
-        print(f"ERRO CRÍTICO ao carregar arquivos de CIDADE: {e}")
-        MAP_CIDADE_CODIGO = {}
-
-    # --- 2. CARREGAR DADOS DE UF (ESTADO) ---
-    try:
-        df_uf = pd.read_csv(os.path.join(base_path, ARQUIVO_UF), sep=';', encoding='latin-1', dtype=str, on_bad_lines='skip')
-        df_uf.columns = df_uf.columns.str.upper().str.strip()
-        
-        MAP_UF_CODIGO = df_uf.set_index('UF')['CODREG'].apply(str).to_dict()
-        
-    except Exception as e:
-        print(f"ERRO CRÍTICO ao carregar arquivo de UF: {e}")
-        MAP_UF_CODIGO = {}
-
-# Garante que os dados mestres sejam carregados na inicialização
-carregar_dados_mestre()
-
-def mapear_colunas(df, mapeamento):
-    """Renomeia colunas do DF para os nomes oficiais do script (Limpeza Extrema)."""
-    colunas_encontradas = {}
-    
-    # Limpeza Extrema de Headers
-    df.columns = df.columns.astype(str).str.replace(r'[^A-Z0-9_]', '', regex=True).str.upper().str.strip() 
-    
-    for nome_oficial, alternativas in mapeamento.items():
-        for alt in alternativas:
-            alt_limpa = alt.upper().replace(' ', '_')
-            if alt_limpa in df.columns:
-                colunas_encontradas[alt_limpa] = nome_oficial
-                break 
-    
-    df.rename(columns=colunas_encontradas, inplace=True)
-    return df
-
 # --- Função Principal de Validação ---
+
 def validar_parceiros(caminho_arquivo):
     erros_encontrados = []
     
-    # [Restante da função de validação, limpeza e retorno]
-    # ... (Bloco de carregamento robusto) ...
-    # ... (Validação linha a linha) ...
+    # ----------------------------------------------------
+    # 1. CARREGAR OS DADOS (AGORA SUPORTA TABULAÇÃO \t)
+    # ----------------------------------------------------
+    df = None; erro_leitura = "Formato desconhecido"
+    
+    # Lista de tentativas atualizada com \t
+    tentativas = [
+        ('\t', 'latin-1'), ('\t', 'utf-8'), # Tenta TAB primeiro (seu caso)
+        (';', 'latin-1'), (';', 'utf-8'),
+        (',', 'latin-1'), (',', 'utf-8')
+    ]
+    
+    for sep, enc in tentativas:
+        try:
+            df_temp = pd.read_csv(caminho_arquivo, sep=sep, encoding=enc, encoding_errors='ignore', dtype=str, engine='python')
+            if len(df_temp.columns) > 1: df = df_temp; break 
+        except Exception as e: erro_leitura = str(e); continue 
+    
+    if df is None:
+        return [{"linha": 0, "coluna": "Arquivo", "valor_encontrado": "N/A", "erro": f"Erro crítico de leitura. Detalhe: {erro_leitura}"}], None
+    
+    df = df.fillna('')
 
-    # Retorna APENAS erros e o DF
+    # ----------------------------------------------------
+    # 2. PRÉ-PROCESSAMENTO
+    # ----------------------------------------------------
+    
+    df = mapear_colunas(df, MAPEAMENTO_COLUNAS)
+
+    colunas_criticas = ['CGC_CPF', 'TIPPESSOA', 'AD_IDEXTERNO', 'NOMEPARC', 'RAZAOSOCIAL', 'ATIVO', 'CLIENTE', 'FORNECEDOR']
+    for col in colunas_criticas:
+        if col not in df.columns:
+            return [{"linha": 0, "coluna": col, "valor_encontrado": "-", "erro": f"Coluna obrigatória '{col}' não encontrada após mapeamento."}], None
+
+    tem_cep = 'CEP' in df.columns
+    
+    # Limpeza de Documentos e Padronização
+    df['CGC_CPF_limpo'] = limpar_documento(df['CGC_CPF'])
+    df['TIPPESSOA_limpo'] = df['TIPPESSOA'].astype(str).str.upper().str.strip()
+    
+    # Limpeza Monetária
+    df = limpar_valor_monetario(df, 'LIMITECREDITO') 
+    
+    # Limpeza de Domínios (S/N) e Registro de Correção
+    for col in ['ATIVO', 'CLIENTE', 'FORNECEDOR']:
+        df[f'{col}_original'] = df[col].copy()
+        df[col] = df[col].astype(str).str.upper().str.strip().replace(MAP_SIM_NAO, regex=False)
+    
+    # Limpeza do CEP (Pré-processamento)
+    if tem_cep:
+        df['CEP_limpo'] = df['CEP'].astype(str).str.replace(r'[^0-9]', '', regex=True).str.strip()
+    
+    # ----------------------------------------------------
+    # 3. VALIDAÇÃO DE REGRAS
+    # ----------------------------------------------------
+    for index, row in df.iterrows():
+        linha_num = index + 2 
+        
+        def adicionar_erro(coluna, valor, valor_corrigido, mensagem, foi_corrigido=False):
+            erros_encontrados.append({"linha": linha_num, "coluna": coluna, "valor_encontrado": str(valor), "valor_corrigido": str(valor_corrigido), "erro": mensagem, "corrigido": foi_corrigido})
+
+        # Registro de Correções Automáticas
+        for col in ['ATIVO', 'CLIENTE', 'FORNECEDOR']:
+            if row[col] != row[f'{col}_original']:
+                adicionar_erro(col, row[f'{col}_original'], row[col], "Valor padronizado para 'S' ou 'N'.", True)
+
+        # Validações Obrigatórias
+        if not row['AD_IDEXTERNO']: adicionar_erro('AD_IDEXTERNO', row['AD_IDEXTERNO'], "", "Campo obrigatório está vazio.", False)
+        if not row['NOMEPARC']: adicionar_erro('NOMEPARC', row['NOMEPARC'], "", "Campo obrigatório (Nome do Parceiro) está vazio.", False)
+        
+        # Validação Domínio
+        tipo_pessoa = row['TIPPESSOA_limpo']
+        if not tipo_pessoa: adicionar_erro('TIPPESSOA', row['TIPPESSOA'], "", "Campo obrigatório (Tipo de Pessoa) está vazio.", False)
+        elif tipo_pessoa not in ('F', 'J'): adicionar_erro('TIPPESSOA', row['TIPPESSOA'], "", "Valor inválido. Permitido apenas 'F' ou 'J'.", False)
+
+        for col_dom in ['ATIVO', 'CLIENTE', 'FORNECEDOR']:
+            if row[col_dom] not in ('S', 'N'): adicionar_erro(col_dom, row[f'{col_dom}_original'], "", "Valor inválido. Esperado 'S' ou 'N'.", False)
+
+        # Validação CPF/CNPJ
+        documento = row['CGC_CPF_limpo']
+        if not documento: adicionar_erro('CGC_CPF', row['CGC_CPF'], "", "Campo obrigatório (CNPJ/CPF) está vazio.", False)
+        elif tipo_pessoa == 'F':
+            if len(documento) != 11: adicionar_erro('CGC_CPF', row['CGC_CPF'], "", f"Tipo Pessoa 'F', mas documento tem {len(documento)} dígitos (esperado 11).", False)
+            elif not validar_cpf(documento): adicionar_erro('CGC_CPF', row['CGC_CPF'], "", "Tipo Pessoa 'F', mas o CPF é inválido (dígito verificador não confere).", False)
+        elif tipo_pessoa == 'J':
+            if len(documento) != 14: adicionar_erro('CGC_CPF', row['CGC_CPF'], "", f"Tipo Pessoa 'J', mas documento tem {len(documento)} dígitos (esperado 14).", False)
+            elif not validar_cnpj(documento): adicionar_erro('CGC_CPF', row['CGC_CPF'], "", "Tipo Pessoa 'J', mas o CNPJ é inválido (dígito verificador não confere).", False)
+
+        # Validação Razão Social
+        if tipo_pessoa == 'F' and row['NOMEPARC'] != row['RAZAOSOCIAL']:
+             adicionar_erro('RAZAOSOCIAL', row['RAZAOSOCIAL'], "", "Para Pessoa Física, a Razão Social deve ser IDÊNTICA ao Nome do Parceiro.", False)
+             
+        # Validação CEP
+        if tem_cep:
+            cep_limpo = row['CEP_limpo']
+            if not cep_limpo: adicionar_erro('CEP', row['CEP'], "", "Campo obrigatório (CEP) está vazio.", False)
+            elif not cep_limpo.isdigit() or len(cep_limpo) != 8: adicionar_erro('CEP', row['CEP'], "", "Formato inválido. CEP deve ter 8 dígitos numéricos.", False)
+
     if erros_encontrados:
         df_erros = pd.DataFrame(erros_encontrados)
         return df_erros.drop_duplicates().to_dict('records'), df

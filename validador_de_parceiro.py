@@ -5,81 +5,21 @@ import os
 import csv
 import unicodedata
 
-# --- Funções Auxiliares de Limpeza ---
+# --- Funções Auxiliares ---
 MAP_SIM_NAO = {'SIM': 'S', 'S': 'S', 'NÃO': 'N', 'NAO': 'N', 'N': 'N', 'YES': 'S', 'NO': 'N', '1': 'S', '0': 'N'}
 
-def remover_acentos(texto):
-    """Remove acentos, til, cedilha e coloca em maiúsculo."""
-    if not isinstance(texto, str):
-        return str(texto)
-    return ''.join(c for c in unicodedata.normalize('NFD', texto)
-                   if unicodedata.category(c) != 'Mn').upper().strip()
+def limpar_documento(doc_series):
+    return doc_series.astype(str).str.replace(r'[./-]', '', regex=True).str.strip()
 
-def ler_csv_robusto(caminho_arquivo):
-    """Tenta ler um CSV com múltiplos separadores e encodings."""
-    if not os.path.exists(caminho_arquivo):
-        print(f"AVISO: Arquivo mestre não encontrado: {caminho_arquivo}")
-        return None
+def limpar_valor_monetario(df, coluna):
+    if coluna in df.columns:
+        df[coluna] = df[coluna].astype(str).str.strip().str.upper()
+        df[coluna] = df[coluna].str.replace('R$', '', regex=False).str.replace('$', '', regex=False)
+        df[coluna] = df[coluna].str.replace('.', '', regex=False).str.replace(',', '.', regex=False)
+        df[coluna] = pd.to_numeric(df[coluna], errors='coerce') 
+    return df
 
-    tentativas = [
-        (';', 'latin-1'), (',', 'latin-1'), ('\t', 'latin-1'),
-        (';', 'utf-8'), (',', 'utf-8'), ('\t', 'utf-8')
-    ]
-    
-    for sep, enc in tentativas:
-        try:
-            df = pd.read_csv(caminho_arquivo, sep=sep, encoding=enc, dtype=str, on_bad_lines='skip')
-            if len(df.columns) > 1:
-                # Limpa cabeçalhos para garantir match
-                df.columns = df.columns.str.upper().str.strip()
-                return df
-        except:
-            continue
-            
-    return None
-
-# --- CARREGAMENTO MESTRE ---
-MAP_CIDADE_CODIGO = {}
-MAP_UF_CODIGO = {}
-
-def carregar_dados_mestre():
-    global MAP_CIDADE_CODIGO, MAP_UF_CODIGO
-    base_path = os.path.dirname(os.path.abspath(__file__)) 
-    
-    # Nomes dos arquivos
-    arq_cid1 = os.path.join(base_path, "CIDADE DE 0 A 4999.xls - new sheet.csv")
-    arq_cid2 = os.path.join(base_path, "CIDADE DE 5000 A 5572.xls - new sheet.csv")
-    arq_uf = os.path.join(base_path, "UF ESTADOS.xls - new sheet.csv")
-
-    # --- CARREGAR CIDADES ---
-    df_cid1 = ler_csv_robusto(arq_cid1)
-    df_cid2 = ler_csv_robusto(arq_cid2)
-    
-    lista_dfs = []
-    if df_cid1 is not None: lista_dfs.append(df_cid1)
-    if df_cid2 is not None: lista_dfs.append(df_cid2)
-    
-    if lista_dfs:
-        df_cidades = pd.concat(lista_dfs, ignore_index=True)
-        # Normaliza a chave (Nome da Cidade)
-        if 'NOMECID' in df_cidades.columns and 'CODCID' in df_cidades.columns:
-            df_cidades['CHAVE'] = df_cidades['NOMECID'].apply(remover_acentos)
-            MAP_CIDADE_CODIGO = df_cidades.set_index('CHAVE')['CODCID'].to_dict()
-        else:
-            print("ERRO: Colunas NOMECID ou CODCID não encontradas nos arquivos de Cidade.")
-
-    # --- CARREGAR UF ---
-    df_uf = ler_csv_robusto(arq_uf)
-    if df_uf is not None:
-        if 'UF' in df_uf.columns and 'CODREG' in df_uf.columns:
-            df_uf['CHAVE'] = df_uf['UF'].apply(remover_acentos)
-            MAP_UF_CODIGO = df_uf.set_index('CHAVE')['CODREG'].to_dict()
-        else:
-            print("ERRO: Colunas UF ou CODREG não encontradas no arquivo de UF.")
-
-carregar_dados_mestre()
-
-# --- Mapeamento de Colunas do Input ---
+# --- Mapeamento de Colunas ---
 MAPEAMENTO_COLUNAS = {
     'CGC_CPF': ['CGC_CPF', 'CNPJ_CPF', 'DOCUMENTO', 'DOC', 'CPF_CNPJ', 'CNPJ_E_CPF'],
     'AD_IDEXTERNO': ['AD_IDEXTERNO', 'COD_SIST_ANTERIOR', 'ID_LEGADO', 'ID_ORIGEM'],
@@ -88,13 +28,13 @@ MAPEAMENTO_COLUNAS = {
     'TIPPESSOA': ['TIPPESSOA', 'TIPO_PESSOA', 'TIPO'],
     'ATIVO': ['ATIVO'], 'CLIENTE': ['CLIENTE'], 'FORNECEDOR': ['FORNECEDOR'],
     'CEP': ['CEP'],
-    'CIDADE': ['CIDADE', 'NOMECID', 'MUNICIPIO'],
-    'UF': ['UF', 'ESTADO']
 }
 
 def mapear_colunas(df, mapeamento):
     colunas_encontradas = {}
+    # Limpeza agressiva dos headers lidos
     df.columns = df.columns.astype(str).str.replace(r'[^A-Z0-9_]', '', regex=True).str.upper().str.strip()
+    
     for nome_oficial, alternativas in mapeamento.items():
         for alt in alternativas:
             alt_limpa = alt.upper().replace(' ', '_')
@@ -104,18 +44,7 @@ def mapear_colunas(df, mapeamento):
     df.rename(columns=colunas_encontradas, inplace=True)
     return df
 
-# --- Funções de Validação ---
-def limpar_documento(doc_series):
-    return doc_series.astype(str).str.replace(r'[./-]', '', regex=True).str.strip()
-    
-def limpar_valor_monetario(df, coluna):
-    if coluna in df.columns:
-        df[coluna] = df[coluna].astype(str).str.strip().str.upper()
-        df[coluna] = df[coluna].str.replace('R$', '', regex=False).str.replace('.', '', regex=False).str.replace(',', '.', regex=False)
-        df[coluna] = pd.to_numeric(df[coluna], errors='coerce') 
-    return df
-
-# [Validadores CPF/CNPJ]
+# --- Validadores CPF/CNPJ ---
 def _calcular_digito_cpf(cpf_parcial):
     soma = 0; fator = len(cpf_parcial) + 1
     for digito in cpf_parcial: soma += int(digito) * fator; fator -= 1
@@ -143,14 +72,17 @@ def validar_cnpj(cnpj):
 def validar_parceiros(caminho_arquivo):
     erros_encontrados = []
     
-    # 1. CARREGAR DADOS (MODO TANQUE DE GUERRA)
+    # 1. CARREGAR DADOS (Adicionado UTF-16 para arquivos do Excel)
     df = None; erro_leitura = "Formato desconhecido"
     tentativas = [
-        ('\t', 'latin-1', csv.QUOTE_MINIMAL), ('\t', 'utf-8', csv.QUOTE_MINIMAL),
+        ('\t', 'utf-16', csv.QUOTE_MINIMAL), # Comum em Excel
+        ('\t', 'latin-1', csv.QUOTE_MINIMAL), 
+        ('\t', 'utf-8', csv.QUOTE_MINIMAL),
         (';', 'latin-1', csv.QUOTE_MINIMAL), (';', 'utf-8', csv.QUOTE_MINIMAL),
         (',', 'latin-1', csv.QUOTE_MINIMAL), (',', 'utf-8', csv.QUOTE_MINIMAL),
-        ('\t', 'latin-1', csv.QUOTE_NONE), (';', 'latin-1', csv.QUOTE_NONE) 
+        ('\t', 'latin-1', csv.QUOTE_NONE) # Fallback extremo
     ]
+
     for sep, enc, quote in tentativas:
         try:
             df_temp = pd.read_csv(caminho_arquivo, sep=sep, encoding=enc, dtype=str, engine='python', quoting=quote, on_bad_lines='skip')
@@ -166,28 +98,18 @@ def validar_parceiros(caminho_arquivo):
 
     # 2. PRÉ-PROCESSAMENTO
     df = mapear_colunas(df, MAPEAMENTO_COLUNAS)
+
     colunas_criticas = ['CGC_CPF', 'TIPPESSOA', 'AD_IDEXTERNO', 'NOMEPARC', 'RAZAOSOCIAL', 'ATIVO', 'CLIENTE', 'FORNECEDOR']
     for col in colunas_criticas:
         if col not in df.columns:
-            return [{"linha": 0, "coluna": col, "valor_encontrado": "-", "erro": f"Coluna obrigatória '{col}' não encontrada após mapeamento."}], None
+            # DEBUG: Mostra quais colunas foram lidas para entendermos o erro
+            colunas_lidas = ", ".join(list(df.columns))
+            return [{"linha": 0, "coluna": col, "valor_encontrado": "-", 
+                     "erro": f"Coluna obrigatória '{col}' não encontrada. O agente leu estas colunas: [{colunas_lidas}]"}], None
 
     tem_cep = 'CEP' in df.columns
     
-    # --- LÓGICA DE CONVERSÃO CIDADE/UF ---
-    if 'CIDADE' in df.columns:
-        # Normaliza para busca (remove acentos, maiúsculas)
-        df['CIDADE_BUSCA'] = df['CIDADE'].apply(remover_acentos)
-        df['CODCID'] = df['CIDADE_BUSCA'].apply(lambda x: MAP_CIDADE_CODIGO.get(x, None))
-    else:
-        df['CODCID'] = None
-
-    if 'UF' in df.columns:
-        df['UF_BUSCA'] = df['UF'].apply(remover_acentos)
-        df['CODREG'] = df['UF_BUSCA'].apply(lambda x: MAP_UF_CODIGO.get(x, None))
-    else:
-        df['CODREG'] = None
-    # -------------------------------------
-
+    # Limpezas
     df['CGC_CPF_original'] = df['CGC_CPF'].copy()
     df['CGC_CPF'] = limpar_documento(df['CGC_CPF'])
     df['TIPPESSOA_limpo'] = df['TIPPESSOA'].astype(str).str.upper().str.strip()
@@ -199,35 +121,20 @@ def validar_parceiros(caminho_arquivo):
     if tem_cep:
         df['CEP_limpo'] = df['CEP'].astype(str).str.replace(r'[^0-9]', '', regex=True).str.strip()
     
-    # 3. VALIDAÇÃO DE REGRAS
+    # 3. VALIDAÇÃO
     for index, row in df.iterrows():
         linha_num = index + 2 
         def adicionar_erro(coluna, valor, mensagem, valor_corrigido="", foi_corrigido=False):
             erros_encontrados.append({"linha": linha_num, "coluna": coluna, "valor_encontrado": str(valor), "erro": mensagem, "valor_corrigido": str(valor_corrigido), "corrigido": foi_corrigido})
 
-        # Validação Mapeamento Mestre (Cidade/UF)
-        if 'CIDADE' in df.columns:
-            if row['CODCID']: # Encontrou código
-                 # Opcional: Registrar que converteu com sucesso
-                 pass
-            elif row['CIDADE'] and str(row['CIDADE']).strip() != '': 
-                 # Tem cidade escrita mas não achou código
-                 adicionar_erro('CIDADE', row['CIDADE'], "Cidade não encontrada no cadastro mestre (verifique a grafia).", "", False)
-
-        if 'UF' in df.columns:
-            if row['CODREG']: 
-                pass
-            elif row['UF'] and str(row['UF']).strip() != '':
-                 adicionar_erro('UF', row['UF'], "UF não encontrada no cadastro mestre.", "", False)
-
-        # Registro de Correções
+        # Correções
         if row['CGC_CPF'] != row['CGC_CPF_original']:
              adicionar_erro('CGC_CPF', row['CGC_CPF_original'], "CNPJ/CPF formatado.", row['CGC_CPF'], True)
         for col_dom in ['ATIVO', 'CLIENTE', 'FORNECEDOR']:
             if row[col_dom] != row[f'{col_dom}_original']:
                  adicionar_erro(col_dom, row[f'{col_dom}_original'], f"Valor padronizado para {row[col_dom]}.", row[col_dom], True)
 
-        # Validações Obrigatórias
+        # Validações
         if not row['AD_IDEXTERNO']: adicionar_erro('AD_IDEXTERNO', row['AD_IDEXTERNO'], "", "Campo obrigatório está vazio.", False)
         if not row['NOMEPARC']: adicionar_erro('NOMEPARC', row['NOMEPARC'], "", "Campo obrigatório (Nome do Parceiro) está vazio.", False)
         

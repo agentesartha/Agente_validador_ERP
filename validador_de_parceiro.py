@@ -47,10 +47,10 @@ def carregar_dados_mestre():
     global MAP_CIDADE_CODIGO, MAP_UF_CODIGO, ERRO_MESTRE_MSG
     base_path = os.path.dirname(os.path.abspath(__file__)) 
     
-    # Nomes exatos dos arquivos
-    f_cid1 = "CIDADE DE 0 A 4999.xls - new sheet.csv"
-    f_cid2 = "CIDADE DE 5000 A 5572.xls - new sheet.csv"
-    f_uf = "UF ESTADOS.xls - new sheet.csv"
+    # NOMES SIMPLIFICADOS (Renomeie seus arquivos na pasta para estes nomes!)
+    f_cid1 = "cidades1.csv"
+    f_cid2 = "cidades2.csv"
+    f_uf = "estados.csv"
 
     # 1. CIDADES
     df1, s1 = ler_csv_robusto(os.path.join(base_path, f_cid1))
@@ -62,7 +62,7 @@ def carregar_dados_mestre():
     
     if dfs:
         df_full = pd.concat(dfs, ignore_index=True)
-        # Tenta identificar as colunas de forma flexível
+        # Tenta identificar colunas
         col_nome = next((c for c in df_full.columns if c in ['NOMECID', 'CIDADE', 'NOME_CIDADE', 'DESCRICAO']), None)
         col_cod = next((c for c in df_full.columns if c in ['CODCID', 'CODIGO', 'COD_CIDADE']), None)
         
@@ -70,10 +70,9 @@ def carregar_dados_mestre():
             df_full['CHAVE'] = df_full[col_nome].apply(remover_acentos)
             MAP_CIDADE_CODIGO = df_full.set_index('CHAVE')[col_cod].to_dict()
         else:
-            # Salva o erro para mostrar no relatório
             ERRO_MESTRE_MSG += f" [CIDADES: Colunas NOMECID/CODCID não encontradas. Lidas: {list(df_full.columns)}]"
     else:
-        ERRO_MESTRE_MSG += f" [CIDADES: Não foi possível ler os arquivos. Erro 1: {s1}. Erro 2: {s2}]"
+        ERRO_MESTRE_MSG += f" [CIDADES: Arquivos 'cidades1.csv' e 'cidades2.csv' não encontrados.]"
 
     # 2. UF
     df_uf, s_uf = ler_csv_robusto(os.path.join(base_path, f_uf))
@@ -87,7 +86,7 @@ def carregar_dados_mestre():
         else:
             ERRO_MESTRE_MSG += f" [UF: Colunas UF/CODREG não encontradas. Lidas: {list(df_uf.columns)}]"
     else:
-        ERRO_MESTRE_MSG += f" [UF: Não foi possível ler o arquivo. Erro: {s_uf}]"
+        ERRO_MESTRE_MSG += f" [UF: Arquivo 'estados.csv' não encontrado.]"
 
 # Executa o carregamento ao importar
 carregar_dados_mestre()

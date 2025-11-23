@@ -1,0 +1,32 @@
+﻿CODUF;UF;DESCRICAO;CODPAIS;CODPARCSECRECEST;CODIBGE;CODPRODGNRE;CODDETGNRE;PROTOCOLOCONVENIO;VALSITCADSEFAZ;ESTORNONFE;GERINFCAMPADICGNRE;CODCAMPOEXTRAGNRE;VALORCAMPOEXTRA;VERSAOGNRE;CODFCPSTGNRE;TIPTITGNREFCPST;USAWEBSERVICEGNRE;TIPOINFO;TIPODOC;CODCAMPOEXTRAGNRE2;CODRECDIME;CODCLSVENCDIME;CODRECDIMEFCPST;CODCLSVENCDIMEFCPST;VLRPERSGNRE;CODSTGNRE;TABPRECPMC;TABPRECOPF;CODUSUALTREG;DHALTREG
+0;0;<SEM DESCRIÇÃO>;0;;;;;;N;N;;;;;;;;;;;;;;;;;;;;
+1;SP;SÃO PAULO;55;;35;;;;S;N;;;;;;;;;;;;;;;;;;;;
+2;MG;MINAS GERAIS;55;;31;;;;S;N;;;;;;;;;;;;;;;;;;;;
+3;DF;DISTRITO FEDERAL;55;;53;;;;N;N;;;;;;;;;;;;;;;;;;;;
+4;GO;GOIAS;55;;52;;;;S;N;;;;;;;;;;;;;;;;;;;;
+5;MT;MATO GROSSO;55;;51;;;;S;N;;;;;;;;;;;;;;;;;;;;
+7;RJ;RIO DE JANEIRO;55;;33;;;;N;N;;;;;;;;;;;;;;;;;;;;
+8;PR;PARANA;55;;41;;;;S;N;;;;;;;;;;;;;;;;;;;;
+9;PA;PARA;55;;15;;;;N;N;;;;;;;;;;;;;;;;;;;;
+10;PE;PERNAMBUCO;55;;26;;;;S;N;;;;;;;;;;;;;;;;;;;;
+11;RO;RONDONIA;55;;11;;;;N;N;;;;;;;;;;;;;;;;;;;;
+12;MS;MATO GROSSO DO SUL;55;;50;;;;S;N;;;;;;;;;;;;;;;;;;;;
+13;SC;SANTA CATARINA;55;;42;;;;N;N;;;;;;;;;;;;;;;;;;;;
+14;TO;TOCANTINS;55;;17;;;;N;N;;;;;;;;;;;;;;;;;;;;
+15;RS;RIO GRANDE DO SUL;55;;43;;;;S;N;;;;;;;;;;;;;;;;;;;;
+16;ES;ESPIRITO SANTO;55;;32;;;;N;N;;;;;;;;;;;;;;;;;;;;
+17;PB;PARAIBA;55;;25;;;;N;N;;;;;;;;;;;;;;;;;;;;
+18;AM;AMAZONAS;55;;13;;;;S;N;;;;;;;;;;;;;;;;;;;;
+19;AL;ALAGOAS;55;;27;;;;N;N;;;;;;;;;;;;;;;;;;;;
+21;CE;CEARA;55;;23;;;;S;N;;;;;;;;;;;;;;;;;;;;
+22;SE;SERGIPE;55;;28;;;;N;N;;;;;;;;;;;;;;;;;;;;
+23;PI;PIAUI;55;;22;;;;N;N;;;;;;;;;;;;;;;;;;;;
+6;BA;BAHIA;55;;29;;;;S;N;;;;;;;;;;;;;;;;;;;;
+28;AP;AMAPA;55;;16;;;;N;N;;;;;;;;;;;;;;;;;;;;
+31;MA;MARANHÃO;55;;21;;;;S;N;;;;;;;;;;;;;;;;;;;;
+20;AC;ACRE;55;;12;;;;N;N;;;;;;;;;;;;;;;;;;;;
+24;RR;RORAIMA;55;;14;;;;N;N;;;;;;;;;;;;;;;;;;;;
+26;RN;RIO GRANDE DO NORTE;55;;24;;;;N;N;;;;;;;;;;;;;;;;;;;;
+27;EX;EX;60;;99;;;;N;N;;;;;;;;;;;;;;;;;;;0;16/09/2025 14:42
+30;EX;EXTERIOR;;;;;;;N;N;;;;;;;;;;;;;;;;;;;0;16/09/2025 14:47
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

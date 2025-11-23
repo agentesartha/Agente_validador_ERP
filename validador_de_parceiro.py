@@ -13,60 +13,41 @@ def remover_acentos(texto):
     return ''.join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn').upper().strip()
 
 def ler_csv_robusto(caminho_arquivo):
-    """Lê CSV tentando detectar separador, inclusive TAB mascarado."""
-    if not os.path.exists(caminho_arquivo): return None, "Arquivo não encontrado"
+    """Lê CSV tentando detectar separador e encoding."""
+    if not os.path.exists(caminho_arquivo): return None, "Arquivo não encontrado no servidor."
     
-    # Lista de tentativas ordenada por probabilidade para seus arquivos
+    # PRIORIDADE PARA TABULAÇÃO (\t) POIS SEUS ARQUIVOS SÃO ASSIM
     tentativas = [
-        ('\t', 'latin-1'), # Tabulação (Excel comum)
-        ('\t', 'utf-16'),  # Tabulação (Excel Unicode)
+        ('\t', 'latin-1'), 
+        ('\t', 'utf-16'), 
+        ('\t', 'utf-8'),
         (';', 'latin-1'), 
-        (',', 'latin-1'), 
-        (';', 'utf-8'), 
-        (',', 'utf-8')
+        (',', 'latin-1')
     ]
     
     for sep, enc in tentativas:
         try:
-            # Lê o arquivo
+            # on_bad_lines='skip' pula linhas quebradas que travam o Python
             df = pd.read_csv(caminho_arquivo, sep=sep, encoding=enc, dtype=str, on_bad_lines='skip')
-            
-            # SE leu apenas 1 coluna, verifica se não é um TAB escondido
-            if len(df.columns) == 1:
-                col_name = str(df.columns[0])
-                if '\t' in col_name:
-                    # Opa! Tem tabulação no nome da coluna. Vamos forçar a leitura com \t
-                    df = pd.read_csv(caminho_arquivo, sep='\t', encoding=enc, dtype=str, on_bad_lines='skip')
-                elif ';' in col_name and sep != ';':
-                    # Opa! Tem ponto e vírgula. Força ;
-                    df = pd.read_csv(caminho_arquivo, sep=';', encoding=enc, dtype=str, on_bad_lines='skip')
-            
-            # Se agora temos mais de 1 coluna, consideramos sucesso
             if len(df.columns) > 1:
+                # Limpa cabeçalhos imediatamente
                 df.columns = df.columns.str.upper().str.strip()
                 return df, "Sucesso"
-                
-        except: continue
-        
-    # Última tentativa: Engine Python automático (Sniffer)
-    try:
-        df = pd.read_csv(caminho_arquivo, sep=None, encoding='latin-1', dtype=str, engine='python', on_bad_lines='skip')
-        if len(df.columns) > 1:
-            df.columns = df.columns.str.upper().str.strip()
-            return df, "Sucesso (Sniffer)"
-    except: pass
+        except Exception as e:
+            continue
+            
+    return None, "Falha na leitura: Nenhum separador (TAB, Ponto e Vírgula) funcionou."
 
-    return None, "Falha na leitura (separador ou encoding desconhecido)"
-
-# --- CARREGAMENTO MESTRE ---
+# --- CARREGAMENTO MESTRE (COM DIAGNÓSTICO DE ERRO) ---
 MAP_CIDADE_CODIGO = {}
 MAP_UF_CODIGO = {}
-ERRO_MESTRE_MSG = ""
+ERRO_MESTRE_MSG = "" # Variável para guardar o erro e mostrar na tela
 
 def carregar_dados_mestre():
     global MAP_CIDADE_CODIGO, MAP_UF_CODIGO, ERRO_MESTRE_MSG
     base_path = os.path.dirname(os.path.abspath(__file__)) 
     
+    # Nomes exatos dos arquivos
     f_cid1 = "CIDADE DE 0 A 4999.xls - new sheet.csv"
     f_cid2 = "CIDADE DE 5000 A 5572.xls - new sheet.csv"
     f_uf = "UF ESTADOS.xls - new sheet.csv"
@@ -81,16 +62,18 @@ def carregar_dados_mestre():
     
     if dfs:
         df_full = pd.concat(dfs, ignore_index=True)
-        col_nome = next((c for c in df_full.columns if c in ['NOMECID', 'CIDADE', 'NOME_CIDADE']), None)
+        # Tenta identificar as colunas de forma flexível
+        col_nome = next((c for c in df_full.columns if c in ['NOMECID', 'CIDADE', 'NOME_CIDADE', 'DESCRICAO']), None)
         col_cod = next((c for c in df_full.columns if c in ['CODCID', 'CODIGO', 'COD_CIDADE']), None)
         
         if col_nome and col_cod:
             df_full['CHAVE'] = df_full[col_nome].apply(remover_acentos)
             MAP_CIDADE_CODIGO = df_full.set_index('CHAVE')[col_cod].to_dict()
         else:
+            # Salva o erro para mostrar no relatório
             ERRO_MESTRE_MSG += f" [CIDADES: Colunas NOMECID/CODCID não encontradas. Lidas: {list(df_full.columns)}]"
     else:
-        ERRO_MESTRE_MSG += f" [CIDADES: Falha leitura. Status: {s1}/{s2}]"
+        ERRO_MESTRE_MSG += f" [CIDADES: Não foi possível ler os arquivos. Erro 1: {s1}. Erro 2: {s2}]"
 
     # 2. UF
     df_uf, s_uf = ler_csv_robusto(os.path.join(base_path, f_uf))
@@ -104,8 +87,9 @@ def carregar_dados_mestre():
         else:
             ERRO_MESTRE_MSG += f" [UF: Colunas UF/CODREG não encontradas. Lidas: {list(df_uf.columns)}]"
     else:
-        ERRO_MESTRE_MSG += f" [UF: Falha leitura. Status: {s_uf}]"
+        ERRO_MESTRE_MSG += f" [UF: Não foi possível ler o arquivo. Erro: {s_uf}]"
 
+# Executa o carregamento ao importar
 carregar_dados_mestre()
 
 # --- Validação e Mapeamento ---
@@ -130,7 +114,9 @@ MAPEAMENTO_COLUNAS = {
 
 def mapear_colunas(df, mapeamento):
     colunas_encontradas = {}
+    # Limpeza agressiva de headers para garantir match
     df.columns = df.columns.astype(str).str.replace(r'[^A-Z0-9_]', '', regex=True).str.upper().str.strip()
+    
     for nome_oficial, alternativas in mapeamento.items():
         for alt in alternativas:
             alt_limpa = alt.upper().replace(' ', '_')
@@ -138,7 +124,7 @@ def mapear_colunas(df, mapeamento):
     df.rename(columns=colunas_encontradas, inplace=True)
     return df
 
-# [Validadores CPF/CNPJ omitidos por brevidade, mantidos iguais]
+# [Validadores CPF/CNPJ mantidos iguais]
 def _calcular_digito_cpf(cpf_parcial):
     soma = 0; fator = len(cpf_parcial) + 1
     for digito in cpf_parcial: soma += int(digito) * fator; fator -= 1
@@ -162,13 +148,15 @@ def validar_cnpj(cnpj):
     cnpj_parcial += str(digito1); digito2 = _calcular_digito_cnpj(cnpj_parcial)
     return cnpj == f"{cnpj[:12]}{digito1}{digito2}"
 
+# --- PRINCIPAL ---
 def validar_parceiros(caminho_arquivo):
+    # 🚨 CHECAGEM DE SEGURANÇA: Se os mestres falharam, avisa o usuário AGORA.
     if not MAP_CIDADE_CODIGO or not MAP_UF_CODIGO:
-        return [{"linha": 0, "coluna": "SISTEMA", "valor_encontrado": "-", "erro": f"ERRO CRÍTICO CARREGAMENTO MESTRE: {ERRO_MESTRE_MSG}"}], None
+        return [{"linha": 0, "coluna": "SISTEMA", "valor_encontrado": "-", "erro": f"ERRO CRÍTICO: Falha ao carregar arquivos Mestre de Cidade/UF. Detalhe: {ERRO_MESTRE_MSG}"}], None
 
     erros_encontrados = []
     
-    # 1. Leitura do Arquivo de Parceiros (Usando a mesma função robusta)
+    # 1. Leitura do Arquivo de Parceiros (Usa a função robusta que prioriza TAB)
     df, msg_erro = ler_csv_robusto(caminho_arquivo)
     if df is None:
         return [{"linha": 0, "coluna": "Arquivo", "valor_encontrado": "N/A", "erro": f"Erro crítico de leitura. {msg_erro}"}], None
@@ -178,21 +166,25 @@ def validar_parceiros(caminho_arquivo):
     df = mapear_colunas(df, MAPEAMENTO_COLUNAS)
     colunas_criticas = ['CGC_CPF', 'TIPPESSOA', 'AD_IDEXTERNO', 'NOMEPARC', 'RAZAOSOCIAL', 'ATIVO', 'CLIENTE', 'FORNECEDOR']
     for col in colunas_criticas:
-        if col not in df.columns: return [{"linha": 0, "coluna": col, "valor_encontrado": "-", "erro": f"Coluna obrigatória '{col}' não encontrada."}], None
+        if col not in df.columns: return [{"linha": 0, "coluna": col, "valor_encontrado": "-", "erro": f"Coluna obrigatória '{col}' não encontrada. (Verifique se o arquivo tem cabeçalho correto)"}], None
 
     tem_cep = 'CEP' in df.columns
     
-    # Lookup Cidade/UF
+    # --- LÓGICA DE CONVERSÃO CIDADE/UF ---
     if 'CIDADE' in df.columns:
         df['CIDADE_BUSCA'] = df['CIDADE'].apply(remover_acentos)
         df['CODCID'] = df['CIDADE_BUSCA'].apply(lambda x: MAP_CIDADE_CODIGO.get(x, None))
-    else: df['CODCID'] = None
+        df['CODCID'] = df['CODCID'].fillna('') # Garante que não seja NaN
+    else: df['CODCID'] = ''
 
     if 'UF' in df.columns:
         df['UF_BUSCA'] = df['UF'].apply(remover_acentos)
         df['CODREG'] = df['UF_BUSCA'].apply(lambda x: MAP_UF_CODIGO.get(x, None))
-    else: df['CODREG'] = None
+        df['CODREG'] = df['CODREG'].fillna('')
+    else: df['CODREG'] = ''
+    # -------------------------------------
 
+    # Limpezas
     df['CGC_CPF_original'] = df['CGC_CPF'].copy()
     df['CGC_CPF'] = limpar_documento(df['CGC_CPF'])
     df['TIPPESSOA_limpo'] = df['TIPPESSOA'].astype(str).str.upper().str.strip()
@@ -209,11 +201,12 @@ def validar_parceiros(caminho_arquivo):
         def adicionar_erro(coluna, valor, mensagem, valor_corrigido="", foi_corrigido=False):
             erros_encontrados.append({"linha": linha_num, "coluna": coluna, "valor_encontrado": str(valor), "erro": mensagem, "valor_corrigido": str(valor_corrigido), "corrigido": foi_corrigido})
 
-        # Mapeamento
+        # Validação Mapeamento Mestre
         if 'CIDADE' in df.columns:
-            if row['CODCID']: pass
+            if row['CODCID']: pass # Achou
             elif row['CIDADE'] and str(row['CIDADE']).strip():
-                adicionar_erro('CIDADE', row['CIDADE'], "Cidade não encontrada no mestre.", "", False)
+                adicionar_erro('CIDADE', row['CIDADE'], "Cidade não encontrada no mestre (Verifique acentuação/grafia).", "", False)
+
         if 'UF' in df.columns:
             if row['CODREG']: pass
             elif row['UF'] and str(row['UF']).strip():
@@ -229,6 +222,7 @@ def validar_parceiros(caminho_arquivo):
         # Validações Básicas
         if not row['AD_IDEXTERNO']: adicionar_erro('AD_IDEXTERNO', '', "Vazio.", "", False)
         if not row['NOMEPARC']: adicionar_erro('NOMEPARC', '', "Vazio.", "", False)
+        
         tipo = row['TIPPESSOA_limpo']
         if not tipo: adicionar_erro('TIPPESSOA', '', "Vazio.", "", False)
         elif tipo not in ('F', 'J'): adicionar_erro('TIPPESSOA', row['TIPPESSOA'], "Inválido.", "", False)

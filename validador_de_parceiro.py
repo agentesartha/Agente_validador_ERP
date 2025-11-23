@@ -3,10 +3,83 @@ import re
 import sys
 import os
 import csv
-import unicodedata # <--- NECESSÁRIO PARA REMOVER ACENTOS
+import unicodedata
 
 # --- Funções Auxiliares de Limpeza ---
 MAP_SIM_NAO = {'SIM': 'S', 'S': 'S', 'NÃO': 'N', 'NAO': 'N', 'N': 'N', 'YES': 'S', 'NO': 'N', '1': 'S', '0': 'N'}
+
+def remover_acentos(texto):
+    """Remove acentos, til, cedilha e coloca em maiúsculo."""
+    if not isinstance(texto, str):
+        return str(texto)
+    return ''.join(c for c in unicodedata.normalize('NFD', texto)
+                   if unicodedata.category(c) != 'Mn').upper().strip()
+
+def ler_csv_robusto(caminho_arquivo):
+    """Tenta ler um CSV com múltiplos separadores e encodings."""
+    if not os.path.exists(caminho_arquivo):
+        print(f"AVISO: Arquivo mestre não encontrado: {caminho_arquivo}")
+        return None
+
+    tentativas = [
+        (';', 'latin-1'), (',', 'latin-1'), ('\t', 'latin-1'),
+        (';', 'utf-8'), (',', 'utf-8'), ('\t', 'utf-8')
+    ]
+    
+    for sep, enc in tentativas:
+        try:
+            df = pd.read_csv(caminho_arquivo, sep=sep, encoding=enc, dtype=str, on_bad_lines='skip')
+            if len(df.columns) > 1:
+                # Limpa cabeçalhos para garantir match
+                df.columns = df.columns.str.upper().str.strip()
+                return df
+        except:
+            continue
+            
+    return None
+
+# --- CARREGAMENTO MESTRE ---
+MAP_CIDADE_CODIGO = {}
+MAP_UF_CODIGO = {}
+
+def carregar_dados_mestre():
+    global MAP_CIDADE_CODIGO, MAP_UF_CODIGO
+    base_path = os.path.dirname(os.path.abspath(__file__)) 
+    
+    # Nomes dos arquivos
+    arq_cid1 = os.path.join(base_path, "CIDADE DE 0 A 4999.xls - new sheet.csv")
+    arq_cid2 = os.path.join(base_path, "CIDADE DE 5000 A 5572.xls - new sheet.csv")
+    arq_uf = os.path.join(base_path, "UF ESTADOS.xls - new sheet.csv")
+
+    # --- CARREGAR CIDADES ---
+    df_cid1 = ler_csv_robusto(arq_cid1)
+    df_cid2 = ler_csv_robusto(arq_cid2)
+    
+    lista_dfs = []
+    if df_cid1 is not None: lista_dfs.append(df_cid1)
+    if df_cid2 is not None: lista_dfs.append(df_cid2)
+    
+    if lista_dfs:
+        df_cidades = pd.concat(lista_dfs, ignore_index=True)
+        # Normaliza a chave (Nome da Cidade)
+        if 'NOMECID' in df_cidades.columns and 'CODCID' in df_cidades.columns:
+            df_cidades['CHAVE'] = df_cidades['NOMECID'].apply(remover_acentos)
+            MAP_CIDADE_CODIGO = df_cidades.set_index('CHAVE')['CODCID'].to_dict()
+        else:
+            print("ERRO: Colunas NOMECID ou CODCID não encontradas nos arquivos de Cidade.")
+
+    # --- CARREGAR UF ---
+    df_uf = ler_csv_robusto(arq_uf)
+    if df_uf is not None:
+        if 'UF' in df_uf.columns and 'CODREG' in df_uf.columns:
+            df_uf['CHAVE'] = df_uf['UF'].apply(remover_acentos)
+            MAP_UF_CODIGO = df_uf.set_index('CHAVE')['CODREG'].to_dict()
+        else:
+            print("ERRO: Colunas UF ou CODREG não encontradas no arquivo de UF.")
+
+carregar_dados_mestre()
+
+# --- Mapeamento de Colunas do Input ---
 MAPEAMENTO_COLUNAS = {
     'CGC_CPF': ['CGC_CPF', 'CNPJ_CPF', 'DOCUMENTO', 'DOC', 'CPF_CNPJ', 'CNPJ_E_CPF'],
     'AD_IDEXTERNO': ['AD_IDEXTERNO', 'COD_SIST_ANTERIOR', 'ID_LEGADO', 'ID_ORIGEM'],
@@ -19,47 +92,7 @@ MAPEAMENTO_COLUNAS = {
     'UF': ['UF', 'ESTADO']
 }
 
-def remover_acentos(texto):
-    """Remove acentos, til, cedilha e coloca em maiúsculo."""
-    if not isinstance(texto, str):
-        return str(texto)
-    # Normaliza para NFD (separa acento da letra) e filtra caracteres não-espaçamento
-    return ''.join(c for c in unicodedata.normalize('NFD', texto)
-                   if unicodedata.category(c) != 'Mn').upper().strip()
-
-# --- FUNÇÕES DE CARREGAMENTO MESTRE ---
-MAP_CIDADE_CODIGO = {}
-MAP_UF_CODIGO = {}
-
-def carregar_dados_mestre():
-    global MAP_CIDADE_CODIGO, MAP_UF_CODIGO
-    base_path = os.path.dirname(os.path.abspath(__file__)) 
-    ARQUIVO_CIDADE_1 = "CIDADE DE 0 A 4999.xls - new sheet.csv"
-    ARQUIVO_CIDADE_2 = "CIDADE DE 5000 A 5572.xls - new sheet.csv"
-    ARQUIVO_UF = "UF ESTADOS.xls - new sheet.csv"
-
-    # --- CARREGAR CIDADES (COM NORMALIZAÇÃO) ---
-    try:
-        df_cid1 = pd.read_csv(os.path.join(base_path, ARQUIVO_CIDADE_1), sep=';', encoding='latin-1', dtype=str, on_bad_lines='skip')
-        df_cid2 = pd.read_csv(os.path.join(base_path, ARQUIVO_CIDADE_2), sep=';', encoding='latin-1', dtype=str, on_bad_lines='skip')
-        df_cidades = pd.concat([df_cid1, df_cid2], ignore_index=True)
-        
-        # Aplica limpeza no nome da cidade DO MESTRE também
-        df_cidades['NOMECID_LIMPO'] = df_cidades['NOMECID'].apply(remover_acentos)
-        MAP_CIDADE_CODIGO = df_cidades.set_index('NOMECID_LIMPO')['CODCID'].apply(str).to_dict()
-    except Exception: MAP_CIDADE_CODIGO = {}
-
-    # --- CARREGAR UF (COM NORMALIZAÇÃO) ---
-    try:
-        df_uf = pd.read_csv(os.path.join(base_path, ARQUIVO_UF), sep=';', encoding='latin-1', dtype=str, on_bad_lines='skip')
-        df_uf['UF_LIMPO'] = df_uf['UF'].apply(remover_acentos)
-        MAP_UF_CODIGO = df_uf.set_index('UF_LIMPO')['CODREG'].apply(str).to_dict()
-    except Exception: MAP_UF_CODIGO = {}
-
-carregar_dados_mestre()
-
 def mapear_colunas(df, mapeamento):
-    """Renomeia colunas com limpeza agressiva."""
     colunas_encontradas = {}
     df.columns = df.columns.astype(str).str.replace(r'[^A-Z0-9_]', '', regex=True).str.upper().str.strip()
     for nome_oficial, alternativas in mapeamento.items():
@@ -142,20 +175,17 @@ def validar_parceiros(caminho_arquivo):
     
     # --- LÓGICA DE CONVERSÃO CIDADE/UF ---
     if 'CIDADE' in df.columns:
-        # Limpa a cidade da planilha (remove acentos) antes de buscar
+        # Normaliza para busca (remove acentos, maiúsculas)
         df['CIDADE_BUSCA'] = df['CIDADE'].apply(remover_acentos)
         df['CODCID'] = df['CIDADE_BUSCA'].apply(lambda x: MAP_CIDADE_CODIGO.get(x, None))
-        # Se não encontrar, tenta manter o original para o usuário ver
-        df['CODCID'] = df['CODCID'].fillna('') 
     else:
-        df['CODCID'] = ''
+        df['CODCID'] = None
 
     if 'UF' in df.columns:
         df['UF_BUSCA'] = df['UF'].apply(remover_acentos)
         df['CODREG'] = df['UF_BUSCA'].apply(lambda x: MAP_UF_CODIGO.get(x, None))
-        df['CODREG'] = df['CODREG'].fillna('')
     else:
-        df['CODREG'] = ''
+        df['CODREG'] = None
     # -------------------------------------
 
     df['CGC_CPF_original'] = df['CGC_CPF'].copy()
@@ -178,15 +208,16 @@ def validar_parceiros(caminho_arquivo):
         # Validação Mapeamento Mestre (Cidade/UF)
         if 'CIDADE' in df.columns:
             if row['CODCID']: # Encontrou código
-                 # Opcional: Registrar como correção se quiser mostrar que achou
-                 pass 
-            elif row['CIDADE']: # Tem cidade escrita mas não achou código
+                 # Opcional: Registrar que converteu com sucesso
+                 pass
+            elif row['CIDADE'] and str(row['CIDADE']).strip() != '': 
+                 # Tem cidade escrita mas não achou código
                  adicionar_erro('CIDADE', row['CIDADE'], "Cidade não encontrada no cadastro mestre (verifique a grafia).", "", False)
 
         if 'UF' in df.columns:
             if row['CODREG']: 
                 pass
-            elif row['UF']:
+            elif row['UF'] and str(row['UF']).strip() != '':
                  adicionar_erro('UF', row['UF'], "UF não encontrada no cadastro mestre.", "", False)
 
         # Registro de Correções

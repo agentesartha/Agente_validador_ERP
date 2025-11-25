@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import os
+import unicodedata
 
 # Importa as funções de validação
 from validador_de_parceiro import validar_parceiros
@@ -27,9 +28,32 @@ if 'pagina_atual' not in st.session_state:
 def set_pagina(nome_pagina):
     st.session_state['pagina_atual'] = nome_pagina
 
-# --- FUNÇÃO DE RELATÓRIO (COM BOTÕES DE VOLTA) ---
+# --- FUNÇÃO AUXILIAR: REMOVER ACENTOS DO DATAFRAME INTEIRO ---
+def remover_acentos_dataframe(df):
+    """Remove acentos de todas as colunas de texto do DataFrame."""
+    if df is None: return None
+    
+    # Função interna para limpar um texto
+    def normalize_str(text):
+        if isinstance(text, str):
+            return ''.join(c for c in unicodedata.normalize('NFD', text)
+                           if unicodedata.category(c) != 'Mn')
+        return text
+
+    # Aplica em todas as colunas que são do tipo 'object' (texto)
+    cols_texto = df.select_dtypes(include=['object']).columns
+    for col in cols_texto:
+        df[col] = df[col].apply(normalize_str)
+    
+    return df
+
+# --- FUNÇÃO DE RELATÓRIO ---
 def exibir_relatorio_erros(erros, df_corrigido=None, nome_arquivo_corrigido="planilha_corrigida.csv"):
     
+    # Limpa acentos do DataFrame Corrigido antes de gerar o CSV
+    if df_corrigido is not None:
+        df_corrigido = remover_acentos_dataframe(df_corrigido)
+
     # 1. TRATAMENTO DE ERRO CRÍTICO
     if erros is None or df_corrigido is None:
         st.error("❌ A validação falhou e não pôde ser concluída. Motivo: Coluna obrigatória faltando, erro na leitura ou arquivo corrompido.")
@@ -43,12 +67,11 @@ def exibir_relatorio_erros(erros, df_corrigido=None, nome_arquivo_corrigido="pla
     # 2. Caso de Sucesso
     elif not erros:
         st.success("✅ SUCESSO! Nenhum erro encontrado. Planilha pronta para importação.")
-        st.balloons() 
         
-        # Botão Download SUCESSO (Para baixar a versão padronizada/limpa)
-        csv_corrigido = df_corrigido.to_csv(index=False, sep=';', encoding='utf-8')
+        # Botão Download (Com utf-8-sig para Excel)
+        csv_corrigido = df_corrigido.to_csv(index=False, sep=';', encoding='utf-8-sig')
         st.download_button(
-            label="⬇️ BAIXAR PLANILHA CORRIGIDA",
+            label="⬇️ BAIXAR PLANILHA CORRIGIDA (SEM ACENTOS)",
             data=csv_corrigido,
             file_name=nome_arquivo_corrigido,
             mime='text/csv',
@@ -59,13 +82,14 @@ def exibir_relatorio_erros(erros, df_corrigido=None, nome_arquivo_corrigido="pla
     else:
         st.error(f"❌ Foram encontrados {len(erros)} erros.") 
         
-        # Botões de Download
         col_btn1, col_btn2 = st.columns(2)
         
         with col_btn1:
-            # Botão 1: Relatório de Erros
             df_erros = pd.DataFrame(erros)
-            csv_erros = df_erros.to_csv(index=False, sep=';', encoding='utf-8')
+            # Também limpa acentos do relatório de erros
+            df_erros = remover_acentos_dataframe(df_erros)
+            csv_erros = df_erros.to_csv(index=False, sep=';', encoding='utf-8-sig')
+            
             st.download_button(
                 label="📄 BAIXAR RELATÓRIO DE ERROS",
                 data=csv_erros,
@@ -75,19 +99,20 @@ def exibir_relatorio_erros(erros, df_corrigido=None, nome_arquivo_corrigido="pla
             )
         
         with col_btn2:
-            # Botão 2: Planilha Corrigida (Mesmo com erros, pode baixar o que foi corrigido auto)
-            csv_corrigido = df_corrigido.to_csv(index=False, sep=';', encoding='utf-8')
-            st.download_button(
-                label="✅ BAIXAR PLANILHA CORRIGIDA",
-                data=csv_corrigido,
-                file_name=nome_arquivo_corrigido,
-                mime='text/csv',
-                type="secondary"
-            )
+            # Verifica se há correções automáticas feitas
+            tem_correcoes = any(e.get('corrigido', False) for e in erros)
+            
+            if tem_correcoes:
+                csv_corrigido = df_corrigido.to_csv(index=False, sep=';', encoding='utf-8-sig')
+                st.download_button(
+                    label="✅ BAIXAR PLANILHA CORRIGIDA",
+                    data=csv_corrigido,
+                    file_name=nome_arquivo_corrigido,
+                    mime='text/csv',
+                    type="primary"
+                )
 
-        # Exibe a tabela de erros
         st.subheader("Detalhamento dos Erros")
-        df_erros = pd.DataFrame(erros)
         st.dataframe(
             df_erros, 
             use_container_width=True,
@@ -95,7 +120,7 @@ def exibir_relatorio_erros(erros, df_corrigido=None, nome_arquivo_corrigido="pla
             column_config={
                 "linha": st.column_config.NumberColumn("Linha", format="%d"),
                 "coluna": "Nome da Coluna",
-                "valor_encontrado": "Valor Original",
+                "valor_encontrado": "Valor Inválido",
                 "erro": "Descrição do Erro"
             }
         )
@@ -156,8 +181,7 @@ elif st.session_state['pagina_atual'] == 'parceiros':
         else:
             erros, df_corrigido = resultados 
 
-        # Chama função com 3 argumentos (incluindo nome do arquivo)
-        exibir_relatorio_erros(erros, df_corrigido, "parceiros_corrigido.csv") 
+        exibir_relatorio_erros(erros, df_corrigido, "parceiros_corrigido.csv")
         
         if os.path.exists(TEMP_PARCEIRO): os.remove(TEMP_PARCEIRO)
 

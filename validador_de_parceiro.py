@@ -13,25 +13,32 @@ def remover_acentos(texto):
     return ''.join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn').upper().strip()
 
 def ler_csv_robusto(caminho_arquivo):
-    """Lê CSV tentando detectar separador e encoding."""
+    """Lê CSV e remove BOM/Sujeira dos headers à força."""
     if not os.path.exists(caminho_arquivo): return None, "Arquivo não encontrado no servidor."
     
+    # Tenta utf-8-sig PRIMEIRO (ele remove o BOM nativamente)
     tentativas = [
-        ('\t', 'latin-1'), ('\t', 'utf-16'), ('\t', 'utf-8'),
-        (';', 'latin-1'), (',', 'latin-1'), 
-        (';', 'utf-8'), (',', 'utf-8')
+        (';', 'utf-8-sig'), (',', 'utf-8-sig'), ('\t', 'utf-8-sig'),
+        (';', 'latin-1'), (',', 'latin-1'), ('\t', 'latin-1')
     ]
     
     for sep, enc in tentativas:
         try:
             df = pd.read_csv(caminho_arquivo, sep=sep, encoding=enc, dtype=str, on_bad_lines='skip')
             if len(df.columns) > 1:
-                df.columns = df.columns.str.upper().str.strip()
-                # Remove BOM dos headers se existir
-                df.columns = df.columns.str.replace('ï»¿', '', regex=False)
+                # 🚨 LIMPEZA CIRÚRGICA DE HEADERS 🚨
+                # 1. Força string e maiúscula
+                df.columns = df.columns.astype(str).str.upper()
+                # 2. Remove a sujeira exata do BOM (Ï»¿) que aparece no Latin-1
+                df.columns = df.columns.str.replace('Ï»¿', '', regex=False)
+                # 3. Remove qualquer caractere que NÃO seja letra, número ou underline
+                df.columns = df.columns.str.replace(r'[^A-Z0-9_]', '', regex=True).str.strip()
+                
                 return df, "Sucesso"
-        except: continue
-    return None, "Falha na leitura."
+        except Exception:
+            continue
+            
+    return None, "Falha na leitura: Nenhum separador ou encoding funcionou."
 
 # --- CARREGAMENTO MESTRE ---
 MAP_CIDADE_CODIGO = {}
@@ -56,6 +63,8 @@ def carregar_dados_mestre():
     
     if dfs:
         df_full = pd.concat(dfs, ignore_index=True)
+        
+        # Tenta identificar colunas (agora limpas)
         col_nome = next((c for c in df_full.columns if c in ['NOMECID', 'CIDADE', 'NOME_CIDADE']), None)
         col_cod = next((c for c in df_full.columns if c in ['CODCID', 'CODIGO', 'COD_CIDADE']), None)
         
@@ -63,7 +72,7 @@ def carregar_dados_mestre():
             df_full['CHAVE'] = df_full[col_nome].apply(remover_acentos)
             MAP_CIDADE_CODIGO = df_full.set_index('CHAVE')[col_cod].to_dict()
         else:
-            ERRO_MESTRE_MSG += f" [CIDADES: Colunas não encontradas. Lidas: {list(df_full.columns)}]"
+            ERRO_MESTRE_MSG += f" [CIDADES: Colunas NOMECID/CODCID não encontradas. Lidas: {list(df_full.columns)}]"
     else:
         ERRO_MESTRE_MSG += f" [CIDADES: Falha leitura. Status: {s1}/{s2}]"
 
@@ -71,25 +80,28 @@ def carregar_dados_mestre():
     df_uf, s_uf = ler_csv_robusto(os.path.join(base_path, f_uf))
     if df_uf is not None:
         col_uf = next((c for c in df_uf.columns if c in ['UF', 'SIGLA', 'ESTADO']), None)
-        col_cod = next((c for c in df_uf.columns if c in ['CODREG', 'CODIGO', 'CODUF']), None)
+        # Aceita tanto CODREG quanto CODUF
+        col_cod = next((c for c in df_uf.columns if c in ['CODREG', 'CODUF', 'CODIGO']), None)
         
         if col_uf and col_cod:
             df_uf['CHAVE'] = df_uf[col_uf].apply(remover_acentos)
             MAP_UF_CODIGO = df_uf.set_index('CHAVE')[col_cod].to_dict()
         else:
-            ERRO_MESTRE_MSG += f" [UF: Colunas não encontradas. Lidas: {list(df_uf.columns)}]"
+            ERRO_MESTRE_MSG += f" [UF: Colunas UF/CODREG não encontradas. Lidas: {list(df_uf.columns)}]"
     else:
         ERRO_MESTRE_MSG += f" [UF: Falha leitura. Status: {s_uf}]"
 
 carregar_dados_mestre()
 
-# --- Mapeamento e Validação ---
+# --- Validação e Mapeamento ---
 def limpar_documento(doc_series):
     return doc_series.astype(str).str.replace(r'[./-]', '', regex=True).str.strip()
     
 def limpar_valor_monetario(df, coluna):
     if coluna in df.columns:
-        df[coluna] = df[coluna].astype(str).str.strip().str.upper().str.replace('R$', '', regex=False).str.replace('.', '', regex=False).str.replace(',', '.', regex=False)
+        df[coluna] = df[coluna].astype(str).str.strip().str.upper()
+        df[coluna] = df[coluna].str.replace('R$', '', regex=False).str.replace('$', '', regex=False)
+        df[coluna] = df[coluna].str.replace('.', '', regex=False).str.replace(',', '.', regex=False)
         df[coluna] = pd.to_numeric(df[coluna], errors='coerce') 
     return df
 
@@ -100,13 +112,15 @@ MAPEAMENTO_COLUNAS = {
     'NOMEPARC': ['NOMEPARC', 'NOME_FANTASIA', 'NOME'],
     'TIPPESSOA': ['TIPPESSOA', 'TIPO_PESSOA', 'TIPO'],
     'ATIVO': ['ATIVO'], 'CLIENTE': ['CLIENTE'], 'FORNECEDOR': ['FORNECEDOR'],
-    'CEP': ['CEP'], 'CIDADE': ['CIDADE', 'NOMECID'], 'UF': ['UF', 'ESTADO'],
-    'CODCID': ['CODCID', 'COD_CIDADE'], 'CODREG': ['CODREG', 'COD_REGIAO']
+    'CEP': ['CEP'], 'CIDADE': ['CIDADE', 'NOMECID'], 'UF': ['UF', 'ESTADO']
 }
 
 def mapear_colunas(df, mapeamento):
+    """Mapeia colunas do arquivo de entrada (Parceiros)."""
     colunas_encontradas = {}
-    df.columns = df.columns.astype(str).str.replace('ï»¿', '', regex=False).str.replace(r'[^A-Z0-9_]', '', regex=True).str.upper().str.strip()
+    # Limpeza extrema também no arquivo de entrada
+    df.columns = df.columns.astype(str).str.replace('Ï»¿', '', regex=False).str.replace(r'[^A-Z0-9_]', '', regex=True).str.upper().str.strip()
+    
     for nome_oficial, alternativas in mapeamento.items():
         for alt in alternativas:
             alt_limpa = alt.upper().replace(' ', '_')
@@ -138,8 +152,8 @@ def validar_cnpj(cnpj):
     cnpj_parcial += str(digito1); digito2 = _calcular_digito_cnpj(cnpj_parcial)
     return cnpj == f"{cnpj[:12]}{digito1}{digito2}"
 
-# --- PRINCIPAL ---
 def validar_parceiros(caminho_arquivo):
+    # Se o mestre falhar, mostra o erro
     if not MAP_CIDADE_CODIGO or not MAP_UF_CODIGO:
         return [{"linha": 0, "coluna": "SISTEMA", "valor_encontrado": "-", "erro": f"ERRO CRÍTICO CARREGAMENTO MESTRE: {ERRO_MESTRE_MSG}"}], None
 
@@ -155,21 +169,22 @@ def validar_parceiros(caminho_arquivo):
     df = mapear_colunas(df, MAPEAMENTO_COLUNAS)
     colunas_criticas = ['CGC_CPF', 'TIPPESSOA', 'AD_IDEXTERNO', 'NOMEPARC', 'RAZAOSOCIAL', 'ATIVO', 'CLIENTE', 'FORNECEDOR']
     for col in colunas_criticas:
-        if col not in df.columns: return [{"linha": 0, "coluna": col, "valor_encontrado": "-", "erro": f"Coluna obrigatória '{col}' não encontrada."}], None
+        if col not in df.columns: return [{"linha": 0, "coluna": col, "valor_encontrado": "-", "erro": f"Coluna obrigatória '{col}' não encontrada no arquivo."}], None
 
     tem_cep = 'CEP' in df.columns
     
-    # --- LÓGICA DE CONVERSÃO (LOOKUP) ---
+    # --- LÓGICA DE CONVERSÃO CIDADE/UF ---
     if 'CIDADE' in df.columns:
         df['CIDADE_BUSCA'] = df['CIDADE'].apply(remover_acentos)
-        # Busca o código no mapa
-        df['CODCID_ENCONTRADO'] = df['CIDADE_BUSCA'].apply(lambda x: MAP_CIDADE_CODIGO.get(x, None))
-    else: df['CODCID_ENCONTRADO'] = None
+        df['CODCID'] = df['CIDADE_BUSCA'].apply(lambda x: MAP_CIDADE_CODIGO.get(x, None))
+        df['CODCID'] = df['CODCID'].fillna('')
+    else: df['CODCID'] = ''
 
     if 'UF' in df.columns:
         df['UF_BUSCA'] = df['UF'].apply(remover_acentos)
-        df['CODREG_ENCONTRADO'] = df['UF_BUSCA'].apply(lambda x: MAP_UF_CODIGO.get(x, None))
-    else: df['CODREG_ENCONTRADO'] = None
+        df['CODREG'] = df['UF_BUSCA'].apply(lambda x: MAP_UF_CODIGO.get(x, None))
+        df['CODREG'] = df['CODREG'].fillna('')
+    else: df['CODREG'] = ''
 
     # Limpezas
     df['CGC_CPF_original'] = df['CGC_CPF'].copy()
@@ -190,30 +205,24 @@ def validar_parceiros(caminho_arquivo):
         def adicionar_erro(coluna, valor, mensagem, valor_corrigido="", foi_corrigido=False):
             erros_encontrados.append({"linha": linha_num, "coluna": coluna, "valor_encontrado": str(valor), "erro": mensagem, "valor_corrigido": str(valor_corrigido), "corrigido": foi_corrigido})
 
-        # Validação e Substituição Mestre
+        # Validação Mestre
         if 'CIDADE' in df.columns:
-            cod_encontrado = row['CODCID_ENCONTRADO']
-            if cod_encontrado: 
-                # SUCESSO: Encontrou o código. Substitui na validação futura e registra correção opcional
-                pass
+            if row['CODCID']: pass
             elif row['CIDADE'] and str(row['CIDADE']).strip():
                 adicionar_erro('CIDADE', row['CIDADE'], "Cidade não encontrada no mestre.", "", False)
-        
-        if 'UF' in df.columns:
-            cod_encontrado = row['CODREG_ENCONTRADO']
-            if cod_encontrado:
-                pass
-            elif row['UF'] and str(row['UF']).strip():
-                 adicionar_erro('UF', row['UF'], "UF não encontrada no mestre.", "", False)
 
-        # Correções
+        if 'UF' in df.columns:
+            if row['CODREG']: pass
+            elif row['UF'] and str(row['UF']).strip():
+                adicionar_erro('UF', row['UF'], "UF não encontrada no mestre.", "", False)
+
+        # Correções e Validações (Mantidas do código anterior)
         if row['CGC_CPF'] != row['CGC_CPF_original']:
              adicionar_erro('CGC_CPF', row['CGC_CPF_original'], "Formatado.", row['CGC_CPF'], True)
         for col_dom in ['ATIVO', 'CLIENTE', 'FORNECEDOR']:
             if row[col_dom] != row[f'{col_dom}_original']:
                  adicionar_erro(col_dom, row[f'{col_dom}_original'], f"Padronizado {row[col_dom]}.", row[col_dom], True)
 
-        # Validações Básicas
         if not row['AD_IDEXTERNO']: adicionar_erro('AD_IDEXTERNO', '', "Vazio.", "", False)
         if not row['NOMEPARC']: adicionar_erro('NOMEPARC', '', "Vazio.", "", False)
         tipo = row['TIPPESSOA_limpo']
@@ -236,20 +245,14 @@ def validar_parceiros(caminho_arquivo):
             if not row['CEP_limpo']: adicionar_erro('CEP', row['CEP'], "Vazio.", "", False)
             elif len(row['CEP_limpo']) != 8: adicionar_erro('CEP', row['CEP'], "CEP inválido.", "", False)
 
-    # 4. SUBSTITUIÇÃO FINAL DE VALORES (O que vai para o Excel)
-    # Aqui substituímos o NOME da cidade pelo CÓDIGO encontrado
-    if 'CIDADE' in df.columns and 'CODCID_ENCONTRADO' in df.columns:
-        # Onde achou código, substitui. Onde não achou, mantém o original (para o usuário ver o erro)
-        df['CIDADE'] = df['CODCID_ENCONTRADO'].fillna(df['CIDADE'])
-        # Se quiser criar a coluna CODCID separada também:
-        df['CODCID'] = df['CODCID_ENCONTRADO']
-
-    if 'UF' in df.columns and 'CODREG_ENCONTRADO' in df.columns:
-        df['UF'] = df['CODREG_ENCONTRADO'].fillna(df['UF'])
-        df['CODREG'] = df['CODREG_ENCONTRADO']
+    # 4. SUBSTITUIÇÃO FINAL (Coloca o CÓDIGO no lugar do NOME)
+    if 'CIDADE' in df.columns and 'CODCID' in df.columns:
+        df['CIDADE'] = df['CODCID'].fillna(df['CIDADE'])
+    if 'UF' in df.columns and 'CODREG' in df.columns:
+        df['UF'] = df['CODREG'].fillna(df['UF'])
 
     # Remove colunas auxiliares
-    cols_to_drop = [c for c in df.columns if '_original' in c or '_BUSCA' in c or '_ENCONTRADO' in c or '_limpo' in c]
+    cols_to_drop = [c for c in df.columns if '_original' in c or '_BUSCA' in c or '_limpo' in c or c in ['CODCID', 'CODREG']]
     df_final = df.drop(columns=cols_to_drop, errors='ignore')
 
     if erros_encontrados:

@@ -10,7 +10,7 @@ from validador_de_estoque import validar_estoque
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(
     page_title="Validador ERP",
-    page_icon="favicon.png",
+    page_icon="favicon.png", 
     layout="wide"
 )
 
@@ -27,47 +27,65 @@ if 'pagina_atual' not in st.session_state:
 def set_pagina(nome_pagina):
     st.session_state['pagina_atual'] = nome_pagina
 
-# --- FUNÇÃO DE RELATÓRIO (Mantenha esta no app.py) ---
+# --- FUNÇÃO DE RELATÓRIO (COM BOTÕES DE VOLTA) ---
 def exibir_relatorio_erros(erros, df_corrigido=None, nome_arquivo_corrigido="planilha_corrigida.csv"):
     
-    if erros is None:
-        st.error("❌ A validação falhou e não pôde ser concluída.")
+    # 1. TRATAMENTO DE ERRO CRÍTICO
+    if erros is None or df_corrigido is None:
+        st.error("❌ A validação falhou e não pôde ser concluída. Motivo: Coluna obrigatória faltando, erro na leitura ou arquivo corrompido.")
+        
+        if erros is not None and isinstance(erros, list):
+             df_erros = pd.DataFrame(erros)
+             st.subheader("Detalhes do Erro Crítico:")
+             st.dataframe(df_erros, use_container_width=True, hide_index=True)
         return
-    
-    # Lógica de Separação e Contagem
-    erros_corrigiveis = [e for e in erros if e.get('corrigido', False)]
-    erros_manuais = [e for e in erros if not e.get('corrigido', False)]
-    total_erros = len(erros_corrigiveis) + len(erros_manuais)
-    total_corrigidos = len(erros_corrigiveis)
-    total_manuais = len(erros_manuais)
 
-    # 1. Dashboard de Métricas 
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Total de Erros", total_erros)
-    with col2:
-        st.metric("✅ Corrigidos Auto.", total_corrigidos)
-    with col3:
-        st.metric("⚠️ Requerem Atenção", total_manuais)
-    
-    st.divider() 
-
-    # 2. Caso de Sucesso TOTAL (0 erros)
-    if not erros:
+    # 2. Caso de Sucesso
+    elif not erros:
         st.success("✅ SUCESSO! Nenhum erro encontrado. Planilha pronta para importação.")
-        # ... (Botão de download aqui) ...
-        return
+        st.balloons() 
+        
+        # Botão Download SUCESSO (Para baixar a versão padronizada/limpa)
+        csv_corrigido = df_corrigido.to_csv(index=False, sep=';', encoding='utf-8')
+        st.download_button(
+            label="⬇️ BAIXAR PLANILHA CORRIGIDA",
+            data=csv_corrigido,
+            file_name=nome_arquivo_corrigido,
+            mime='text/csv',
+            type="primary"
+        )
         
     # 3. Caso de Erros Encontrados
     else:
-        # Exibe Aviso
-        if total_manuais > 0:
-            st.warning(f"⚠️ {total_manuais} erro(s) requerem correção manual.")
+        st.error(f"❌ Foram encontrados {len(erros)} erros.") 
         
-        if total_corrigidos > 0:
-            st.info(f"✨ {total_corrigidos} erro(s) foram corrigidos automaticamente!")
+        # Botões de Download
+        col_btn1, col_btn2 = st.columns(2)
+        
+        with col_btn1:
+            # Botão 1: Relatório de Erros
+            df_erros = pd.DataFrame(erros)
+            csv_erros = df_erros.to_csv(index=False, sep=';', encoding='utf-8')
+            st.download_button(
+                label="📄 BAIXAR RELATÓRIO DE ERROS",
+                data=csv_erros,
+                file_name='relatorio_erros_validacao.csv',
+                mime='text/csv',
+                type="secondary"
+            )
+        
+        with col_btn2:
+            # Botão 2: Planilha Corrigida (Mesmo com erros, pode baixar o que foi corrigido auto)
+            csv_corrigido = df_corrigido.to_csv(index=False, sep=';', encoding='utf-8')
+            st.download_button(
+                label="✅ BAIXAR PLANILHA CORRIGIDA",
+                data=csv_corrigido,
+                file_name=nome_arquivo_corrigido,
+                mime='text/csv',
+                type="secondary"
+            )
 
-        # Tabela de erros
+        # Exibe a tabela de erros
         st.subheader("Detalhamento dos Erros")
         df_erros = pd.DataFrame(erros)
         st.dataframe(
@@ -76,9 +94,9 @@ def exibir_relatorio_erros(erros, df_corrigido=None, nome_arquivo_corrigido="pla
             hide_index=True,
             column_config={
                 "linha": st.column_config.NumberColumn("Linha", format="%d"),
-                "coluna": "Coluna",
+                "coluna": "Nome da Coluna",
                 "valor_encontrado": "Valor Original",
-                "erro": "Descrição"
+                "erro": "Descrição do Erro"
             }
         )
 
@@ -118,9 +136,9 @@ st.divider()
 
 # 1. Tela Inicial (HOME)
 if st.session_state['pagina_atual'] == 'home':
-    st.info("💡 **Novidade:** O sistema agora corrige automaticamente erros simples como formatação, espaços extras, e padronização de campos!")
+    pass 
 
-# 2. Tela Parceiros
+# 2. Tela Parceiros (ELIF)
 elif st.session_state['pagina_atual'] == 'parceiros':
     st.header("Validação de Parceiros")
     st.subheader("Faça o upload do arquivo `parceiros.csv` abaixo:")
@@ -130,13 +148,20 @@ elif st.session_state['pagina_atual'] == 'parceiros':
         with open(TEMP_PARCEIRO, "wb") as f:
             f.write(arquivo_upado.getbuffer())
         
-        with st.spinner("Analisando regras de negócio e aplicando correções..."):
-            erros, df_corrigido = validar_parceiros(TEMP_PARCEIRO)
+        with st.spinner("Analisando regras de negócio..."):
+            resultados = validar_parceiros(TEMP_PARCEIRO)
         
-        exibir_relatorio_erros(erros, df_corrigido, "parceiros_corrigido.csv")
+        if resultados is None:
+            erros, df_corrigido = None, None
+        else:
+            erros, df_corrigido = resultados 
+
+        # Chama função com 3 argumentos (incluindo nome do arquivo)
+        exibir_relatorio_erros(erros, df_corrigido, "parceiros_corrigido.csv") 
+        
         if os.path.exists(TEMP_PARCEIRO): os.remove(TEMP_PARCEIRO)
 
-# 3. Tela Produtos
+# 3. Tela Produtos (ELIF)
 elif st.session_state['pagina_atual'] == 'produtos':
     st.header("Validação de Produtos")
     st.subheader("Faça o upload do arquivo `produtos.csv` abaixo:")
@@ -146,13 +171,19 @@ elif st.session_state['pagina_atual'] == 'produtos':
         with open(TEMP_PRODUTO, "wb") as f:
             f.write(arquivo_upado.getbuffer())
             
-        with st.spinner("Analisando NCMs, unidades, regras e corrigindo..."):
-            erros, df_corrigido = validar_produtos(TEMP_PRODUTO)
+        with st.spinner("Analisando NCMs, unidades e regras..."):
+            resultados = validar_produtos(TEMP_PRODUTO)
+
+        if resultados is None:
+            erros, df_corrigido = None, None
+        else:
+            erros, df_corrigido = resultados 
             
-        exibir_relatorio_erros(erros, df_corrigido, "produtos_corrigido.csv")
+        exibir_relatorio_erros(erros, df_corrigido, "produtos_corrigido.csv") 
+        
         if os.path.exists(TEMP_PRODUTO): os.remove(TEMP_PRODUTO)
 
-# 4. Tela Estoque
+# 4. Tela Estoque (ELIF)
 elif st.session_state['pagina_atual'] == 'estoque':
     st.header("Validação de Estoque")
     st.warning("⚠️ Atenção: Necessário arquivo Mestre de Produtos exportado do ERP.")
@@ -169,10 +200,15 @@ elif st.session_state['pagina_atual'] == 'estoque':
         with open(TEMP_ESTOQUE, "wb") as f: f.write(arquivo_estoque.getbuffer())
         with open(TEMP_MESTRE_PRODUTO, "wb") as f: f.write(arquivo_mestre.getbuffer())
         
-        with st.spinner("Cruzando dados com o mestre e corrigindo..."):
-            erros, df_corrigido = validar_estoque(TEMP_ESTOQUE)
+        with st.spinner("Cruzando dados com o mestre..."):
+            resultados = validar_estoque(TEMP_ESTOQUE)
+
+        if resultados is None:
+            erros, df_corrigido = None, None
+        else:
+            erros, df_corrigido = resultados 
             
-        exibir_relatorio_erros(erros, df_corrigido, "estoque_corrigido.csv")
+        exibir_relatorio_erros(erros, df_corrigido, "estoque_corrigido.csv") 
         
         if os.path.exists(TEMP_ESTOQUE): os.remove(TEMP_ESTOQUE)
         if os.path.exists(TEMP_MESTRE_PRODUTO): os.remove(TEMP_MESTRE_PRODUTO)
